@@ -2,7 +2,8 @@ import operator
 from time import sleep
 
 import numpy as np
-from storehouse import Storehouse
+
+from ..environment.env_storehouse import Storehouse
 
 STEPS = 100000
 SLEEP_TIME = 0.00
@@ -110,7 +111,7 @@ def wait(env: Storehouse):
     sleep(SLEEP_TIME)
 
 
-def manual_policy(env: Storehouse, state: np.array):
+def initial_human_policy(env: Storehouse, state: np.array):
     try:
         ready_to_consume_types = [order["type"] for order in env.outpoints.delivery_schedule if order["timer"] == 0]
     except IndexError:
@@ -139,7 +140,7 @@ def manual_policy(env: Storehouse, state: np.array):
         wait(env)
 
 
-def manual_policy_2(env: Storehouse, state: np.array):
+def enhanced_human_policy(env: Storehouse, state: np.array):
     try:
         ready_to_consume_types = [order["type"] for order in env.outpoints.delivery_schedule if order["timer"] == 0]
     except IndexError:
@@ -181,7 +182,7 @@ def main():
     env = Storehouse("PRUEBA/manual_policy", logging=True, save_episodes=False)
     s = env.reset(VISUAL)
     for _ in range(STEPS):
-        manual_policy_2(env, s)
+        enhanced_human_policy(env, s)
         # s, r, done, info = env.step(action)
         # env.render()
         # print(f'Action: {action}, Reward: {r}, info: {info}')

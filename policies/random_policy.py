@@ -2,7 +2,7 @@ import argparse
 from pathlib import Path
 from time import sleep
 
-from parsecRL.environment.env_storehouse import Storehouse
+from ..environment.env_storehouse import Storehouse
 
 SLEEP_TIME = 0.001
 STEPS = 100000
