@@ -3,6 +3,9 @@ name = "storehouse"
 version = "1.0"
 description = "Storehouse environment for training RL agents how to manage a warehouse"
 authors = ["Julen <julencestero.s8@gmail.com>"]
+packages = [
+    { include = "environment" },
+]
 
 [tool.poetry.dependencies]
 python = "^3.8, <3.10"
