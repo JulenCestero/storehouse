@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "storehouse"
+version = "1.0"
+description = "Storehouse environment for training RL agents how to manage a warehouse"
+authors = ["Julen <julencestero.s8@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.8, <3.10"
+numpy = "1.21.2"
+gym = "0.19"
+colorama = "^0.4.4"
+
+[tool.poetry.dev-dependencies]
+black = "^21.10b0"
+isort = "^5.10.1"
+pytest = "^6.2.5"
+click = "^8.0.3"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
