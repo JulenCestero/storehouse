@@ -16,7 +16,7 @@ MAX_NUM_BOXES = 6
 MIN_NUM_BOXES = 2
 FEATURE_NUMBER = 7
 MAX_INVALID = 10
-MAX_MOVEMENTS = 100  # 50
+MAX_MOVEMENTS = 1000  # 50
 MIN_CNN_LEN = 32
 AUGMENT_FACTOR = 10
 EPISODE = 1
@@ -165,10 +165,16 @@ class Outpoints:
 
 class Storehouse(gym.Env):
     def __init__(
-        self, logname: str = "log/log", logging: bool = False, save_episodes: bool = False, transpose_state: bool = False
+        self,
+        logname: str = "log/log",
+        logging: bool = False,
+        save_episodes: bool = False,
+        transpose_state: bool = False,
+        max_steps: int = MAX_MOVEMENTS,
     ):
         self.signature = dict()
         self.max_id = 1
+        self.max_steps = max_steps
         self.log_flag = logging
         self.load_conf()
         self.feature_number = FEATURE_NUMBER + len(self.type_information) - 1
@@ -706,7 +712,7 @@ class Storehouse(gym.Env):
         # if self.num_invalid >= MAX_INVALID:
         #     self.score.ultra_negative_achieved = True
         #     self.done = True
-        if self.num_actions >= MAX_MOVEMENTS:
+        if self.num_actions >= self.max_steps:
             self.done = True
             reward = 0
             info["done"] = "Max movements achieved. Well done!"
