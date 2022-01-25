@@ -1,164 +1,157 @@
 {
-    "10x10": {
-        "grid": [
-            10,
-            10
-        ],
-        "conf": {
-            "entrypoints": [
-                "(0,0)",
-                "(0,9)"
-            ],
-            "outpoints": [
-                "(9,0)",
-                "(9,9)"
-            ],
-            "num_agents": 1,
-            "material_types": {
-                "A": {
-                    "create": {
-                        "mean": 5,
-                        "std": 1
-                    },
-                    "deliver": {
-                        "mean": 20,
-                        "std": 5
-                    }
-                },
-                "B": {
-                    "create": {
-                        "mean": 8,
-                        "std": 3
-                    },
-                    "deliver": {
-                        "mean": 30,
-                        "std": 9
-                    }
-                }
-            },
-            "delivery_timer": {
-                "mean": 50,
-                "std": 10
-            }
+  "6x6": {
+    "grid": [6, 6],
+    "conf": {
+      "entrypoints": ["(0,0)", "(0,5)"],
+      "outpoints": ["(5,0)", "(5,5)"],
+      "num_agents": 1,
+      "material_types": {
+        "A": {
+          "create": {
+            "lambda": 5
+          },
+          "deliver": {
+            "lambda": 30
+          }
+        },
+        "B": {
+          "create": {
+            "lambda": 10
+          },
+          "deliver": {
+            "lambda": 50
+          }
         }
-    },
-    "50x50": {
-        "grid": [
-            50,
-            50
-        ],
-        "conf": {
-            "entrypoints": [
-                "(0,0)",
-                "(0,49)"
-            ],
-            "outpoints": [
-                "(49,0)",
-                "(49,49)"
-            ],
-            "num_agents": 1,
-            "material_types": {
-                "A": {
-                    "create": {
-                        "mean": 5,
-                        "std": 1
-                    },
-                    "deliver": {
-                        "mean": 30,
-                        "std": 5
-                    }
-                },
-                "B": {
-                    "create": {
-                        "mean": 8,
-                        "std": 3
-                    },
-                    "deliver": {
-                        "mean": 45,
-                        "std": 9
-                    }
-                }
-            },
-            "delivery_timer": {
-                "mean": 50,
-                "std": 10
-            }
-        }
-    },
-    "6x6": {
-        "grid": [
-            6,
-            6
-        ],
-        "conf": {
-            "entrypoints": [
-                "(0,0)",
-                "(0,5)"
-            ],
-            "outpoints": [
-                "(5,0)",
-                "(5,5)"
-            ],
-            "num_agents": 1,
-            "material_types": {
-                "A": {
-                    "create": {
-                        "lambda": 5
-                    },
-                    "deliver": {
-                        "lambda": 30
-                    }
-                },
-                "B": {
-                    "create": {
-                        "lambda": 10
-                    },
-                    "deliver": {
-                        "lambda": 50
-                    }
-                }
-            },
-            "delivery_timer": {
-                "lambda": 25
-            }
-        }
-    },
-    "36x36": {
-        "grid": [
-            36,
-            36
-        ],
-        "conf": {
-            "entrypoints": [
-                "(0,0)",
-                "(0,35)"
-            ],
-            "outpoints": [
-                "(35,0)",
-                "(35,35)"
-            ],
-            "num_agents": 1,
-            "material_types": {
-                "A": {
-                    "create": {
-                        "lambda": 5
-                    },
-                    "deliver": {
-                        "lambda": 30
-                    }
-                },
-                "B": {
-                    "create": {
-                        "lambda": 10
-                    },
-                    "deliver": {
-                        "lambda": 50
-                    }
-                }
-            },
-            "delivery_timer": {
-                "lambda": 25
-            }
-        }
+      },
+      "delivery_timer": {
+        "lambda": 25
+      }
     }
+  },
+  "6x6fast": {
+    "grid": [6, 6],
+    "conf": {
+      "entrypoints": ["(0,0)", "(0,5)"],
+      "outpoints": ["(5,0)", "(5,5)"],
+      "num_agents": 1,
+      "material_types": {
+        "A": {
+          "create": {
+            "lambda": 2
+          },
+          "deliver": {
+            "lambda": 15
+          }
+        },
+        "B": {
+          "create": {
+            "lambda": 4
+          },
+          "deliver": {
+            "lambda": 20
+          }
+        }
+      },
+      "delivery_timer": {
+        "lambda": 20
+      }
+    }
+  },
+  "10x10": {
+    "grid": [10, 10],
+    "conf": {
+      "entrypoints": ["(0,0)", "(0,9)"],
+      "outpoints": ["(9,0)", "(9,9)"],
+      "num_agents": 1,
+      "material_types": {
+        "A": {
+          "create": {
+            "mean": 5,
+            "std": 1
+          },
+          "deliver": {
+            "mean": 20,
+            "std": 5
+          }
+        },
+        "B": {
+          "create": {
+            "mean": 8,
+            "std": 3
+          },
+          "deliver": {
+            "mean": 30,
+            "std": 9
+          }
+        }
+      },
+      "delivery_timer": {
+        "mean": 50,
+        "std": 10
+      }
+    }
+  },
+  "50x50": {
+    "grid": [50, 50],
+    "conf": {
+      "entrypoints": ["(0,0)", "(0,49)"],
+      "outpoints": ["(49,0)", "(49,49)"],
+      "num_agents": 1,
+      "material_types": {
+        "A": {
+          "create": {
+            "mean": 5,
+            "std": 1
+          },
+          "deliver": {
+            "mean": 30,
+            "std": 5
+          }
+        },
+        "B": {
+          "create": {
+            "mean": 8,
+            "std": 3
+          },
+          "deliver": {
+            "mean": 45,
+            "std": 9
+          }
+        }
+      },
+      "delivery_timer": {
+        "mean": 50,
+        "std": 10
+      }
+    }
+  },
+  "36x36": {
+    "grid": [36, 36],
+    "conf": {
+      "entrypoints": ["(0,0)", "(0,35)"],
+      "outpoints": ["(35,0)", "(35,35)"],
+      "num_agents": 1,
+      "material_types": {
+        "A": {
+          "create": {
+            "lambda": 5
+          },
+          "deliver": {
+            "lambda": 30
+          }
+        },
+        "B": {
+          "create": {
+            "lambda": 10
+          },
+          "deliver": {
+            "lambda": 50
+          }
+        }
+      },
+      "delivery_timer": {
+        "lambda": 25
+      }
+    }
+  }
 }

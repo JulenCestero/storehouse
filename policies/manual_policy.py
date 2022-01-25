@@ -2,12 +2,11 @@ import operator
 from time import sleep
 
 import numpy as np
-
-from ..environment.env_storehouse import Storehouse
+from storehouse.environment.env_storehouse import Storehouse
 
 STEPS = 100000
-SLEEP_TIME = 0.00
-VISUAL = False
+SLEEP_TIME = 0.2
+VISUAL = True
 
 
 def store_item(env: Storehouse, waiting_items: list):
@@ -179,10 +178,11 @@ def enhanced_human_policy(env: Storehouse, state: np.array):
 
 
 def main():
-    env = Storehouse("PRUEBA/manual_policy", logging=True, save_episodes=False)
+    env = Storehouse("PRUEBA/manual_policy", logging=True, save_episodes=False, conf_name="6x6fast", max_steps=100)
     s = env.reset(VISUAL)
     for _ in range(STEPS):
-        enhanced_human_policy(env, s)
+        # enhanced_human_policy(env, s)
+        initial_human_policy(env, s)
         # s, r, done, info = env.step(action)
         # env.render()
         # print(f'Action: {action}, Reward: {r}, info: {info}')

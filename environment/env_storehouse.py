@@ -171,12 +171,13 @@ class Storehouse(gym.Env):
         save_episodes: bool = False,
         transpose_state: bool = False,
         max_steps: int = MAX_MOVEMENTS,
+        conf_name: str = CONF_NAME,
     ):
         self.signature = dict()
         self.max_id = 1
         self.max_steps = max_steps
         self.log_flag = logging
-        self.load_conf()
+        self.load_conf(conf_name)
         self.feature_number = FEATURE_NUMBER + len(self.type_information) - 1
         self.score = Score()
         self.episode = list()
