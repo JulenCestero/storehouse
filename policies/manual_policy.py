@@ -2,7 +2,7 @@ import operator
 from time import sleep
 
 import numpy as np
-from storehouse.environment.env_storehouse import Storehouse
+from storehouse.environment.env_storehouse import CONF_NAME, MAX_MOVEMENTS, Storehouse
 
 STEPS = 100000
 SLEEP_TIME = 0.2
