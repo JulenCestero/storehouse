@@ -2,16 +2,17 @@ import argparse
 from pathlib import Path
 from time import sleep
 
-from ..environment.env_storehouse import CONF_NAME, MAX_MOVEMENTS, Storehouse
+from storehouse.environment.env_storehouse import CONF_NAME, MAX_MOVEMENTS, Storehouse
+from tqdm import tqdm
 
-SLEEP_TIME = 0.001
+SLEEP_TIME = 0.00
 STEPS = 100000
 log_folder = Path("log")
 
 
 def random_agent(env=Storehouse(), timesteps: int = STEPS, render=True):
     env.reset(render)
-    for _ in range(timesteps):
+    for _ in tqdm(range(timesteps)):
         action = env.action_space.sample()
         s, r, done, info = env.step(action)
         if render:
@@ -32,8 +33,9 @@ if __name__ == "__main__":
     logname = args.logname
     timesteps = args.timesteps
     conf_name = args.conf_name
-    max_steps = args.max_steps
+    max_steps = int(args.max_steps)
     main_folder = log_folder / logname
     main_folder.mkdir(parents=True, exist_ok=True)
     env = Storehouse(main_folder / logname, logging=True, conf_name=conf_name, max_steps=max_steps)
     random_agent(env, render=False, timesteps=timesteps)
+    print(f"Results saved in {logname}")

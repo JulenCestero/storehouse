@@ -201,9 +201,7 @@ def main(log_folder, policy, conf_name, max_steps, render):
         SLEEP_TIME = 0.2
     else:
         SLEEP_TIME = 0.00
-    folder = Path(log_folder)
-    folder.mkdir(parents=True, exist_ok=True)
-    env = Storehouse(log_folder, logging=True, save_episodes=False, conf_name=conf_name, max_steps=max_steps)
+    env = Storehouse(log_folder, logging=True, save_episodes=False, conf_name=conf_name, max_steps=int(max_steps))
     s = env.reset(VISUAL)
     if not VISUAL:
         pbar = tqdm(total=STEPS)

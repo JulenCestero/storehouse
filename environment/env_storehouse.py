@@ -202,7 +202,7 @@ class Storehouse(gym.Env):
             self.episode_folder = self.logname.parent / "episodes"
             self.episode_folder.mkdir(parents=True, exist_ok=True)
         if self.log_flag:
-            self.logname.parent.mkdir(parents=True, exist_ok=True)
+            self.logname.mkdir(parents=True, exist_ok=True)
             self.metrics_log = open(str(self.logname / self.logname.name) + "_metrics.csv", "w")
             self.metrics_log.write("Delivered Boxes,Filled orders,Score,Steps,Ultra negative achieved,Mean box ages,Cueles\n")
             # self.actions_log = open(str(self.logname) + "_actions.csv", "w")
