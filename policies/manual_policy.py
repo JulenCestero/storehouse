@@ -1,11 +1,14 @@
 import operator
+from pathlib import Path
 from time import sleep
 
+import click
 import numpy as np
 from storehouse.environment.env_storehouse import CONF_NAME, MAX_MOVEMENTS, Storehouse
+from tqdm import tqdm
 
 STEPS = 100000
-SLEEP_TIME = 0.2
+SLEEP_TIME = 0.00
 VISUAL = True
 
 
@@ -16,7 +19,8 @@ def store_item(env: Storehouse, waiting_items: list):
         print(f"General action: store_item\nAction: {target_entrypoint}\nReward: {reward}\n{info}")
         env.render()
     if done:
-        print("######################")
+        if VISUAL:
+            print("######################")
         env.reset()
     sleep(SLEEP_TIME)
 
@@ -37,7 +41,8 @@ def store_item(env: Storehouse, waiting_items: list):
             print(f"General action: store_item\nAction: {target_cell}\nReward: {reward}\n{info}")
             env.render()
     if done:
-        print("######################")
+        if VISUAL:
+            print("######################")
         env.reset()
     sleep(SLEEP_TIME)
 
@@ -57,7 +62,8 @@ def deliver_from_entrypoints(env: Storehouse, available_types: list, entrypoints
         print(f"General action: deliver from entrypoint \nAction: {da_box.position}\nReward: {reward}\n{info}")
         env.render()
     if done:
-        print("######################")
+        if VISUAL:
+            print("######################")
         env.reset()
     sleep(SLEEP_TIME)
 
@@ -66,7 +72,8 @@ def deliver_from_entrypoints(env: Storehouse, available_types: list, entrypoints
         print(f"General action: deliver_item\nAction: {env.outpoints.outpoints[0]}\nReward: {reward}\n{info}")
         env.render()
     if done:
-        print("######################")
+        if VISUAL:
+            print("######################")
         env.reset()
     sleep(SLEEP_TIME)
 
@@ -85,7 +92,8 @@ def deliver_item(env: Storehouse, available_types: list):
         print(f"General action: deliver_item\nAction: {oldest_box.position}\nReward: {reward}\n{info}")
         env.render()
     if done:
-        print("######################")
+        if VISUAL:
+            print("######################")
         env.reset()
     sleep(SLEEP_TIME)
 
@@ -94,7 +102,8 @@ def deliver_item(env: Storehouse, available_types: list):
         print(f"General action: deliver_item\nAction: {env.outpoints.outpoints[0]}\nReward: {reward}\n{info}")
         env.render()
     if done:
-        print("######################")
+        if VISUAL:
+            print("######################")
         env.reset()
     sleep(SLEEP_TIME)
 
@@ -105,7 +114,8 @@ def wait(env: Storehouse):
         print(f"General action: wait\nAction: {(0,1)}\nReward: {reward}\n{info}")
         env.render()
     if done:
-        print("######################")
+        if VISUAL:
+            print("######################")
         env.reset()
     sleep(SLEEP_TIME)
 
@@ -177,18 +187,42 @@ def enhanced_human_policy(env: Storehouse, state: np.array):
         wait(env)
 
 
-def main():
-    env = Storehouse("PRUEBA/manual_policy", logging=True, save_episodes=False, conf_name="6x6fast", max_steps=100)
+@click.command()
+@click.argument("log_folder")
+@click.option("-p", "--policy", default="ehp")
+@click.option("-c", "--conf_name", default="6x6fast")
+@click.option("-m", "--max_steps", default=50)
+@click.option("-r", "--render", default=0)
+def main(log_folder, policy, conf_name, max_steps, render):
+    global VISUAL
+    global SLEEP_TIME
+    VISUAL = int(render)
+    if render:
+        SLEEP_TIME = 0.2
+    else:
+        SLEEP_TIME = 0.00
+    folder = Path(log_folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    env = Storehouse(log_folder, logging=True, save_episodes=False, conf_name=conf_name, max_steps=max_steps)
     s = env.reset(VISUAL)
+    if not VISUAL:
+        pbar = tqdm(total=STEPS)
     for _ in range(STEPS):
-        # enhanced_human_policy(env, s)
-        initial_human_policy(env, s)
-        # s, r, done, info = env.step(action)
-        # env.render()
-        # print(f'Action: {action}, Reward: {r}, info: {info}')
-        # sleep(0.3)
-        # if done:
-        #     s = env.reset()
+        if policy == "ehp":
+            enhanced_human_policy(env, s)
+        elif policy == "ihp":
+            initial_human_policy(env, s)
+        else:
+            raise NotImplementedError
+        if not VISUAL:
+            pbar.update(1)
+    print(f"Finish! Results saved in {log_folder}")
+    # s, r, done, info = env.step(action)
+    # env.render()
+    # print(f'Action: {action}, Reward: {r}, info: {info}')
+    # sleep(0.3)
+    # if done:
+    #     s = env.reset()
 
 
 if __name__ == "__main__":
