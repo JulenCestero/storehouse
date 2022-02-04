@@ -1,7 +1,7 @@
-import argparse
 from pathlib import Path
 from time import sleep
 
+import click
 from storehouse.environment.env_storehouse import CONF_NAME, MAX_MOVEMENTS, Storehouse
 from tqdm import tqdm
 
@@ -23,19 +23,22 @@ def random_agent(env=Storehouse(), timesteps: int = STEPS, render=True):
             s = env.reset(render)
 
 
+@click.command()
+@click.option("-l", "--log_folder", default="log/log")
+@click.option("-c", "--conf_name", default="6x6fast")
+@click.option("-m", "--max_steps", default=50)
+@click.option("-r", "--render", default=0)
+def main(log_folder, conf_name, max_steps, render):
+    env = Storehouse(
+        "log/log" if not log_folder else log_folder,
+        logging=True if log_folder else False,
+        save_episodes=False,
+        conf_name=conf_name,
+        max_steps=int(max_steps),
+    )
+    random_agent(env, timesteps=STEPS, render=render)
+    print(f"Results saved in {log_folder}")
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("logname", help="Name of the folder where the results of the training will be stored")
-    parser.add_argument("-t", "--timesteps", help="Number of timesteps used for the training", default=STEPS, type=int)
-    parser.add_argument("-c", "--conf_name", default=CONF_NAME)
-    parser.add_argument("-m", "--max_steps", default=MAX_MOVEMENTS)
-    args = parser.parse_args()
-    logname = args.logname
-    timesteps = args.timesteps
-    conf_name = args.conf_name
-    max_steps = int(args.max_steps)
-    main_folder = log_folder / logname
-    main_folder.mkdir(parents=True, exist_ok=True)
-    env = Storehouse(main_folder / logname, logging=True, conf_name=conf_name, max_steps=max_steps)
-    random_agent(env, render=False, timesteps=timesteps)
-    print(f"Results saved in {logname}")
+    main()

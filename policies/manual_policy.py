@@ -188,7 +188,7 @@ def enhanced_human_policy(env: Storehouse, state: np.array):
 
 
 @click.command()
-@click.argument("log_folder")
+@click.option("-l", "--log_folder", default="log/log")
 @click.option("-p", "--policy", default="ehp")
 @click.option("-c", "--conf_name", default="6x6fast")
 @click.option("-m", "--max_steps", default=50)
@@ -201,7 +201,13 @@ def main(log_folder, policy, conf_name, max_steps, render):
         SLEEP_TIME = 0.2
     else:
         SLEEP_TIME = 0.00
-    env = Storehouse(log_folder, logging=True, save_episodes=False, conf_name=conf_name, max_steps=int(max_steps))
+    env = Storehouse(
+        "log/log" if not log_folder else log_folder,
+        logging=True if log_folder else False,
+        save_episodes=False,
+        conf_name=conf_name,
+        max_steps=int(max_steps),
+    )
     s = env.reset(VISUAL)
     if not VISUAL:
         pbar = tqdm(total=STEPS)

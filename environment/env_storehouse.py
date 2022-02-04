@@ -106,10 +106,11 @@ class Entrypoint:
 
 
 class Outpoints:
-    def __init__(self, outpoints: list, type_information: dict, delivery_timer: dict):
+    def __init__(self, outpoints: list, type_information: dict, delivery_timer: dict, max_orders: int):
         self.outpoints = outpoints
         self.type_information = type_information
         self.delivery_timer_info = delivery_timer
+        self.max_orders = max_orders
         self.max_num_boxes = MAX_NUM_BOXES
         self.min_num_boxes = MIN_NUM_BOXES
         self.delivery_schedule = list()  # Form: [{type, timer until ready, num_boxes}]
@@ -141,7 +142,7 @@ class Outpoints:
 
     def create_delivery(self) -> dict:
         if self.last_delivery_timers > np.random.poisson(self.delivery_timer_info["lambda"]):
-            if len([order["timer"] for order in self.delivery_schedule if order["timer"] == 0]) <= MAX_ORDERS:
+            if len([order["timer"] for order in self.delivery_schedule if order["timer"] == 0]) <= self.max_orders:
                 type = random.choice(list(self.type_information.keys()))
                 order = self.create_order(type)
                 self.delivery_schedule.append(order)
@@ -172,10 +173,12 @@ class Storehouse(gym.Env):
         transpose_state: bool = False,
         max_steps: int = MAX_MOVEMENTS,
         conf_name: str = CONF_NAME,
+        max_orders: int = MAX_ORDERS,
     ):
         self.signature = dict()
         self.max_id = 1
         self.max_steps = max_steps
+        self.max_orders = max_orders
         self.log_flag = logging
         self.load_conf(conf_name)
         self.feature_number = FEATURE_NUMBER + len(self.type_information) - 1
@@ -236,6 +239,7 @@ class Storehouse(gym.Env):
             [eval(ii) for ii in conf["outpoints"]],
             type_information=self.type_information,
             delivery_timer=conf["delivery_timer"],
+            max_orders=self.max_orders,
         )
         self.num_agents = conf["num_agents"]
 

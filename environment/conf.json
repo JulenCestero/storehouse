@@ -134,7 +134,7 @@
       "material_types": {
         "A": {
           "create": {
-            "lambda": 5
+            "lambda": 1
           },
           "deliver": {
             "lambda": 30
@@ -142,7 +142,7 @@
         },
         "B": {
           "create": {
-            "lambda": 10
+            "lambda": 2
           },
           "deliver": {
             "lambda": 50
@@ -150,7 +150,7 @@
         }
       },
       "delivery_timer": {
-        "lambda": 25
+        "lambda": 10
       }
     }
   }
