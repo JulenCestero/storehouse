@@ -174,6 +174,7 @@ class Storehouse(gym.Env):
         max_steps: int = MAX_MOVEMENTS,
         conf_name: str = CONF_NAME,
         max_orders: int = MAX_ORDERS,
+        augment: bool = None,
     ):
         self.signature = dict()
         self.max_id = 1
@@ -181,6 +182,8 @@ class Storehouse(gym.Env):
         self.max_orders = max_orders
         self.log_flag = logging
         self.load_conf(conf_name)
+        if augment is not None:
+            self.augmented = augment
         self.feature_number = FEATURE_NUMBER + len(self.type_information) - 1
         self.score = Score()
         self.episode = list()
