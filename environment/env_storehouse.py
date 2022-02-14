@@ -514,6 +514,8 @@ class Storehouse(gym.Env):
             if queue[0]["timer"] == 0
         ]:
             self.grid[box.position] = box.id
+        if self.agents[0].got_item:
+            self.grid[self.agents[0].position] = 0
         self.max_id = signature["max_id"]
         self.signature = signature
 
@@ -521,11 +523,6 @@ class Storehouse(gym.Env):
         state = dict()
         state["max_id"] = self.max_id
         state["done"] = self.done
-        # state["grid"] = np.zeros(self.grid.shape)
-        # for box in list(self.material.values()) + [
-        #     queue[0]["material"] for queue in [ep.material_queue for ep in self.entrypoints] if len(queue) > 0
-        # ]:
-        #     state["grid"][box.position] = box.id
         state["boxes"] = [
             {"id": box.id, "pos": box.position, "age": box.age, "type": box.type} for box in self.material.values()
         ]
@@ -782,32 +779,83 @@ class Storehouse(gym.Env):
         state, reward, done, info = self._step(norm_action)
         return state, reward, done, info
 
-    def reset(self, render=False) -> list:
+    def create_random_box(self, position: tuple, type: str = None, age: int = None):
+        box = Box(
+            id=self.max_id,
+            position=position,
+            type=type if type else random.choice(list(self.type_information.keys())),
+            age=age if age else random.choice(range(100)),  # Magic number
+        )
+        self.max_id += 1
+        return box
+
+    def assign_order_to_material(self):
+        def decomposition(i):
+            while i > 0:
+                try:
+                    n = random.randint(MIN_NUM_BOXES, min(i, MAX_NUM_BOXES))
+                except ValueError:
+                    n = random.randint(1, min(i, MAX_NUM_BOXES))
+                yield n
+                i -= n
+
+        for type in self.type_information.keys():
+            num_boxes_type = len([box for box in self.material.values() if box.type == type])
+            num_boxes_distribution = decomposition(num_boxes_type)
+            for num_boxes in num_boxes_distribution:
+                timer = round(np.random.poisson(10))  # Magic number
+                self.outpoints.delivery_schedule.append({"type": type, "timer": timer, "num_boxes": num_boxes})
+
+    def reset(self, render=False, random=False) -> list:
         global EPISODE
         EPISODE += 1
         self.signature = dict()
-        self.max_id = 1
-        self.grid = np.zeros(self.grid.shape)
-        ####
-        # Random agent position
-        # self.agents = [Agent((random.choice(range(self.grid.shape[0])), random.choice(range(self.grid.shape[1])))) for _ in range(self.num_agents)]
-        # Deterministic agent position
-        self.agents = [Agent(initial_position=(3, 3)) for _ in range(self.num_agents)]
-        ####
-        self.material = dict()
         self.restricted_cells = list()
         self.episode = list()
+        self.grid = np.zeros(self.grid.shape)
+
+        self.material = dict()
         self.outpoints.reset()
         for entrypoint in self.entrypoints:
             entrypoint.reset()
+
+        if random:
+            self.reset_random()
+        else:
+            self.agents = [Agent(initial_position=(3, 3)) for _ in range(self.num_agents)]
+
         self.calculate_restricted_cells()
         self.done = False
         self.score.reset()
         self.num_invalid = 0
-        self.num_actions = 0
+        self.number_actions = 0
         if render:
             self.render()
         return self.get_state()
+
+    def reset_random(self):
+        box_probability = 0.40  # Magic number
+        self.agents = [
+            Agent(
+                (random.choice(range(1, self.grid.shape[0] - 1)), random.choice(range(1, self.grid.shape[1] - 1))),
+                got_item=random.choice([0, 1]),  # If the agent has an item, it will be of ID = 1
+            )
+            for _ in range(self.num_agents)
+        ]
+        if self.agents[0].got_item:  # Initialize random box
+            self.material[self.agents[0].got_item] = self.create_random_box(position=self.agents[0].position)
+        for row in range(1, self.grid.shape[0] - 1):  # Populate the grid of boxes
+            for col in range(1, self.grid.shape[1] - 1):
+                if (row, col) == self.agents[0].position:
+                    continue
+                if random.random() < box_probability:
+                    max_id = self.max_id
+                    self.material[max_id] = self.create_random_box((row, col))
+        for box in list(self.material.values()):  # Introduce these boxes in the grid object
+            self.grid[box.position] = box.id
+        if self.agents[0].got_item:  # Clean grid
+            self.grid[self.agents[0].position] = 0
+        self.assign_order_to_material()
 
     @staticmethod
     def encode(num: int) -> str:
