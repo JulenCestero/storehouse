@@ -32,7 +32,7 @@ class Score:
         self.clear_run_score = 0
         self.ultra_negative_achieved = False
         self.steps = 0
-        self.box_ages = list()
+        self.box_ages = []
         self.non_optimal_material = 0
 
     def print_score(self) -> str:
@@ -66,7 +66,7 @@ class Entrypoint:
         self.type_information = type_information
         self.position = position
         self.wait_time_cumulate = 0
-        self.material_queue = list()  # FIFO
+        self.material_queue = []  # FIFO
 
     def create_new_order(self, order: dict, max_id: int):  # Order has the form {type: number_of_boxes}
         ((material_type, number_of_material),) = order.items()
@@ -88,7 +88,7 @@ class Entrypoint:
             return self.material_queue.pop(0)["material"]
         except Exception as ex:
             logging.error(f"Error at get_item in Entrypoint {self.position}")
-            raise Exception
+            raise Exception from ex
 
     def update_entrypoint(self):
         for material in self.material_queue:
@@ -101,7 +101,7 @@ class Entrypoint:
             return 0
 
     def reset(self):
-        self.material_queue = list()
+        self.material_queue = []
         self.wait_time_cumulate = 0
 
 
@@ -113,12 +113,12 @@ class Outpoints:
         self.max_orders = max_orders
         self.max_num_boxes = MAX_NUM_BOXES
         self.min_num_boxes = MIN_NUM_BOXES
-        self.delivery_schedule = list()  # Form: [{type, timer until ready, num_boxes}]
+        self.delivery_schedule = []  # Form: [{type, timer until ready, num_boxes}]
         self.desired_material = 0
         self.last_delivery_timers = np.Inf
 
     def reset(self):
-        self.delivery_schedule = list()
+        self.delivery_schedule = []
         self.desired_material = 0
         self.last_delivery_timers = np.Inf
 
@@ -137,21 +137,18 @@ class Outpoints:
     def create_order(self, type: str) -> dict:
         timer = round(np.random.poisson(self.type_information[type]["deliver"]["lambda"]))
         num_boxes = random.randrange(self.min_num_boxes, self.max_num_boxes + 1)
-        order = {"type": type, "timer": timer, "num_boxes": num_boxes}
-        return order
+        return {"type": type, "timer": timer, "num_boxes": num_boxes}
 
     def create_delivery(self) -> dict:
-        if self.last_delivery_timers > np.random.poisson(self.delivery_timer_info["lambda"]):
-            if len([order["timer"] for order in self.delivery_schedule if order["timer"] == 0]) <= self.max_orders:
-                type = random.choice(list(self.type_information.keys()))
-                order = self.create_order(type)
-                self.delivery_schedule.append(order)
-                self.last_delivery_timers = 0
-                return {key: item for key, item in order.items() if key != "timer"}
-            else:
-                return None
-        else:
+        if self.last_delivery_timers <= np.random.poisson(self.delivery_timer_info["lambda"]):
             return None
+        if len([order["timer"] for order in self.delivery_schedule if order["timer"] == 0]) > self.max_orders:
+            return None
+        type = random.choice(list(self.type_information.keys()))
+        order = self.create_order(type)
+        self.delivery_schedule.append(order)
+        self.last_delivery_timers = 0
+        return {key: item for key, item in order.items() if key != "timer"}
 
     def consume(self, box: Box) -> int:
         for ii, order in enumerate(self.delivery_schedule):
@@ -175,8 +172,9 @@ class Storehouse(gym.Env):
         conf_name: str = CONF_NAME,
         max_orders: int = MAX_ORDERS,
         augment: bool = None,
+        random_start: bool = False,
     ):
-        self.signature = dict()
+        self.signature = {}
         self.max_id = 1
         self.max_steps = max_steps
         self.max_orders = max_orders
@@ -184,20 +182,21 @@ class Storehouse(gym.Env):
         self.load_conf(conf_name)
         if augment is not None:
             self.augmented = augment
+        self.random_start = random_start
         self.feature_number = FEATURE_NUMBER + len(self.type_information) - 1
         self.score = Score()
-        self.episode = list()
+        self.episode = []
         self.logname = Path(logname)
         self.save_episodes = save_episodes
         self.transpose_state = transpose_state
         if self.augmented:
-            size = tuple([dimension * AUGMENT_FACTOR for dimension in self.grid.shape])
+            size = tuple(dimension * AUGMENT_FACTOR for dimension in self.grid.shape)
         else:
             size = self.grid.shape
         self.action_space = gym.spaces.Discrete(self.grid.shape[0] * self.grid.shape[1])
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(size[0], size[1], self.feature_number), dtype=np.uint8)
-        self.material = dict()  # dict of objects of the class box. {id: Box} form of the dict. ID > 0
-        self.restricted_cells = list()  # list of coordinates to where the agent cannot move
+        self.material = {}  # dict of objects of the class box. {id: Box} form of the dict. ID > 0
+        self.restricted_cells = []  # list of coordinates to where the agent cannot move
         self.agents = [Agent((0, 0)) for _ in range(self.num_agents)]
         self.done = False
         self.action = None
@@ -228,10 +227,7 @@ class Storehouse(gym.Env):
         """
         with open(os.path.join(os.path.dirname(__file__), "conf.json"), "r") as f:
             current_conf = json.load(f)[conf]
-        if any([length < MIN_CNN_LEN for length in current_conf["grid"]]):
-            self.augmented = True
-        else:
-            self.augmented = False
+        self.augmented = any(length < MIN_CNN_LEN for length in current_conf["grid"])
         self.grid = np.zeros(current_conf["grid"])
         conf = current_conf["conf"]
         self.type_information = conf["material_types"]
@@ -260,15 +256,12 @@ class Storehouse(gym.Env):
                     elif status == 2:
                         logging.info("Order completed")
                         self.score.filled_orders += 1
-                    else:
-                        # logging.warning('None consumed')
-                        pass
                     self.score.box_ages.append(self.material[self.grid[outpoint]].age)
                     del self.material[self.grid[outpoint]]
                     self.grid[outpoint] = 0
                 except Exception as e:
                     logging.error(f"Unexpected error at consuming the material at outpoint {outpoint}: {e}")
-                    raise Exception
+                    raise Exception from e
 
     def calculate_restricted_cells(self):
         """
@@ -331,43 +324,44 @@ class Storehouse(gym.Env):
     def get_reward(self, move_status: int, ag: Agent, box: Box = None) -> int:
         if move_status == 0:  # invalid action
             return -1
-        elif any([True for element in self.outpoints.delivery_schedule if element["timer"] < 1]):
+        elif any(True for element in self.outpoints.delivery_schedule if element["timer"] < 1):
             if ag.position in self.outpoints.outpoints:
-                min_rew = -0.5
-                oldest_box = max(
-                    [material for material in self.material.values() if material.type == box.type],
-                    key=operator.attrgetter("age"),
-                )
-                age_factor = self.get_age_factor(box.age, oldest_box.age)
-                if age_factor != 0:
-                    self.score.non_optimal_material += 1
-                self.score.delivered_boxes += 1
-                return min_rew * age_factor
-            else:  # Cost for step if a delivery is prepared to be taken in the outpoints
-                try:
-                    entrypoints_with_items = [
-                        ep
-                        for ep in [ep for ep in self.entrypoints if len(ep.material_queue) > 0]
-                        if ep.material_queue[0]["timer"] == 0
-                    ]
-                except IndexError:
-                    entrypoints_with_items = list()
-                if len(self.material) or len(entrypoints_with_items):
-                    return -0.9
-                else:
-                    return 0
+                return self.delivery_reward(box)
+            try:
+                entrypoints_with_items = [
+                    ep
+                    for ep in [ep for ep in self.entrypoints if len(ep.material_queue) > 0]
+                    if ep.material_queue[0]["timer"] == 0
+                ]
+            except IndexError:
+                entrypoints_with_items = []
+            if len(self.material) or len(entrypoints_with_items):
+                return -0.9
+            else:
+                return 0
         elif any(
-            [
-                not (entrypoint.material_queue[0]["timer"])
-                for entrypoint in self.entrypoints
-                if len(entrypoint.material_queue) > 0
-            ]
+            not (entrypoint.material_queue[0]["timer"])
+            for entrypoint in self.entrypoints
+            if len(entrypoint.material_queue) > 0
         ):
             return -0.9
         elif len(self.outpoints.delivery_schedule) == 0:
             return 0
         else:
             return 0
+
+    def delivery_reward(self, box):
+        min_rew = -0.5
+        oldest_box = max(
+            (material for material in self.material.values() if material.type == box.type),
+            key=operator.attrgetter("age"),
+        )
+
+        age_factor = self.get_age_factor(box.age, oldest_box.age)
+        if age_factor != 0:
+            self.score.non_optimal_material += 1
+        self.score.delivered_boxes += 1
+        return min_rew * age_factor
 
     def log(self, action):
         if self.done:
@@ -401,18 +395,21 @@ class Storehouse(gym.Env):
         try:
             ready_to_consume_types = [order["type"] for order in self.outpoints.delivery_schedule if order["timer"] == 0]
         except IndexError:
-            ready_to_consume_types = list()
+            ready_to_consume_types = []
 
         if agent.got_item:  # Agent with item
-            free_storage = list()
+            free_storage = []
             for ii in range(1, self.grid.shape[0] - 1):
-                for jj in range(1, self.grid.shape[1] - 1):
-                    if self.grid[ii][jj] == 0 and (ii, jj) != agent.position:
-                        free_storage.append((ii, jj))
+                free_storage.extend(
+                    (ii, jj)
+                    for jj in range(1, self.grid.shape[1] - 1)
+                    if self.grid[ii][jj] == 0 and (ii, jj) != agent.position
+                )
+
             if not len(free_storage):
                 raise Exception
             if self.material[agent.got_item].type in ready_to_consume_types:  # Outpoints open
-                available_actions = [outpoint for outpoint in self.outpoints.outpoints] + free_storage
+                available_actions = list(self.outpoints.outpoints) + free_storage
             else:  # Outpoints closed
                 available_actions = free_storage
 
@@ -424,76 +421,72 @@ class Storehouse(gym.Env):
                     if ep.material_queue[0]["timer"] == 0
                 ]
             except IndexError:
-                entrypoints_with_items = list()
+                entrypoints_with_items = []
 
             if len(ready_to_consume_types) and len(entrypoints_with_items):  # If outpoints open, entrypoints open
                 available_actions = [box.position for box in self.material.values() if box.type in ready_to_consume_types] + [
                     ep.position for ep in entrypoints_with_items
                 ]
-            elif len(ready_to_consume_types) and not len(entrypoints_with_items):  # If outpoints open, entrypoints closed
+            elif len(ready_to_consume_types):  # If outpoints open, entrypoints closed
                 if len([True for box in self.material.values() if box.type in ready_to_consume_types]):  # Item in storage
                     available_actions = [box.position for box in self.material.values() if box.type in ready_to_consume_types]
                 else:  # Item NOT in storage
-                    free_storage = list()
-                    for ii in range(1, self.grid.shape[0] - 1):
-                        for jj in range(1, self.grid.shape[1] - 1):
-                            if self.grid[ii][jj] == 0 and (ii, jj) not in self.restricted_cells:
-                                free_storage.append((ii, jj))
-                    if not len(free_storage):
-                        raise Exception
-
-                    outer_ring = list()
-                    try:
-                        assert self.grid.shape[0] == self.grid.shape[1]  # Only for square environments
-                    except AssertionError:
-                        raise NotImplementedError
-                    for pos in range(self.grid.shape[0] - 1):
-                        outer_ring.append((0, pos))
-                        outer_ring.append((self.grid.shape[0] - 1, pos))
-                        outer_ring.append((pos, 0))
-                        outer_ring.append((pos, self.grid.shape[0] - 1))
-                    outer_ring = [
-                        action
-                        for action in set(outer_ring)
-                        if action not in [entrypoint.position for entrypoint in self.entrypoints] + self.outpoints.outpoints
-                    ]
-
-                    available_actions = free_storage + outer_ring
-            elif not len(ready_to_consume_types) and len(entrypoints_with_items):  # If outpoints closed, entrypoints open
+                    available_actions = self.get_available_cells()
+            elif len(entrypoints_with_items):  # If outpoints closed, entrypoints open
                 available_actions = [ep.position for ep in entrypoints_with_items]
             else:  # If outpoints closed, entrypoints closed
-                free_storage = list()
-                for ii in range(1, self.grid.shape[0] - 1):
-                    for jj in range(1, self.grid.shape[1] - 1):
-                        if self.grid[ii][jj] == 0 and (ii, jj) not in self.restricted_cells:
-                            free_storage.append((ii, jj))
-                if not len(free_storage):
-                    raise Exception
-
-                outer_ring = list()
-                try:
-                    assert self.grid.shape[0] == self.grid.shape[1]  # Only for square environments
-                except AssertionError:
-                    raise NotImplementedError
-                for pos in range(self.grid.shape[0] - 1):
-                    outer_ring.append((0, pos))
-                    outer_ring.append((self.grid.shape[0] - 1, pos))
-                    outer_ring.append((pos, 0))
-                    outer_ring.append((pos, self.grid.shape[0] - 1))
-                outer_ring = [
-                    action
-                    for action in set(outer_ring)
-                    if action not in [entrypoint.position for entrypoint in self.entrypoints] + self.outpoints.outpoints
-                ]
-
-                available_actions = free_storage + outer_ring
+                available_actions = self.get_available_cells()
         try:
             for action in available_actions:
                 self.action_mask[self.decode_action(action)] = 1
         except IndexError as e:
             print(e)
             print(available_actions)
-            raise IndexError
+            raise IndexError from e
+
+    def get_free_storage_of_grid(self):
+        result = []
+        for ii in range(1, self.grid.shape[0] - 1):
+            result.extend(
+                (
+                    (ii, jj)
+                    for jj in range(1, self.grid.shape[1] - 1)
+                    if self.grid[ii][jj] == 0 and (ii, jj) not in self.restricted_cells
+                )
+            )
+
+        if not len(result):
+            raise Exception
+
+        return result
+
+    def get_available_cells(self):
+        free_storage = self.get_free_storage_of_grid()
+        outer_ring = []
+        try:
+            assert self.grid.shape[0] == self.grid.shape[1]  # Only for square environments
+        except AssertionError as e:
+            raise NotImplementedError from e
+        return self.get_outer_ring_with_free_storage(outer_ring, free_storage)
+
+    def get_outer_ring_with_free_storage(self, outer_ring, free_storage):
+        for pos in range(self.grid.shape[0] - 1):
+            outer_ring.extend(
+                (
+                    (0, pos),
+                    (self.grid.shape[0] - 1, pos),
+                    (pos, 0),
+                    (pos, self.grid.shape[0] - 1),
+                )
+            )
+
+        outer_ring = [
+            action
+            for action in set(outer_ring)
+            if action not in [entrypoint.position for entrypoint in self.entrypoints] + self.outpoints.outpoints
+        ]
+
+        return free_storage + outer_ring
 
     def set_signature(self, signature: dict) -> None:
         self.reset()
@@ -520,12 +513,20 @@ class Storehouse(gym.Env):
         self.signature = signature
 
     def get_signature(self) -> dict:
-        state = dict()
-        state["max_id"] = self.max_id
-        state["done"] = self.done
-        state["boxes"] = [
-            {"id": box.id, "pos": box.position, "age": box.age, "type": box.type} for box in self.material.values()
-        ]
+        state = {
+            "max_id": self.max_id,
+            "done": self.done,
+            "boxes": [
+                {
+                    "id": box.id,
+                    "pos": box.position,
+                    "age": box.age,
+                    "type": box.type,
+                }
+                for box in self.material.values()
+            ],
+        }
+
         state["restricted_cell"] = list(self.restricted_cells)
         state["agents"] = [
             {
@@ -549,7 +550,7 @@ class Storehouse(gym.Env):
         try:
             ready_to_consume_types = [order["type"] for order in self.outpoints.delivery_schedule if order["timer"] == 0]
         except IndexError:
-            ready_to_consume_types = list()
+            ready_to_consume_types = []
         state["outpoints"] = {
             "pos": self.outpoints.outpoints,
             "accepted_types": list(set(ready_to_consume_types)),
@@ -588,7 +589,7 @@ class Storehouse(gym.Env):
         try:
             ready_to_consume_types = [order["type"] for order in self.outpoints.delivery_schedule if order["timer"] == 0]
         except IndexError:
-            ready_to_consume_types = list()
+            ready_to_consume_types = []
         for ii, outpoint_grid in enumerate(outpoint_grids):
             for outpoint in self.outpoints.outpoints:
                 outpoint_grid[outpoint] = 255 if sorted(self.type_information.keys())[ii] in ready_to_consume_types else 0
@@ -605,7 +606,7 @@ class Storehouse(gym.Env):
             )
 
         if self.augmented:
-            size = tuple([dimension * AUGMENT_FACTOR for dimension in self.grid.shape])
+            size = tuple(dimension * AUGMENT_FACTOR for dimension in self.grid.shape)
             state_mix = np.array(
                 [
                     np.kron(grid, np.ones((AUGMENT_FACTOR, AUGMENT_FACTOR)))
@@ -653,13 +654,13 @@ class Storehouse(gym.Env):
             assert all(ii >= 0 for ii in movement)
             # assert ag.position != movement # Stay still
             if ag.got_item:
-                assert not (movement in [entrypoint.position for entrypoint in self.entrypoints])  #  Go to entrypoint
+                assert movement not in [entrypoint.position for entrypoint in self.entrypoints]
                 assert not (
                     movement in self.outpoints.outpoints
                     and self.material[ag.got_item].type
                     not in [material["type"] for material in self.outpoints.delivery_schedule if material["timer"] < 1]
                 )  #  Go to not ready outpoints
-                assert not (movement in [box.position for box in self.material.values()])  #  Go on top of other items
+                assert movement not in [box.position for box in self.material.values()]
                 assert not (
                     movement not in [entrypoint.position for entrypoint in self.entrypoints]
                     and movement not in self.outpoints.outpoints
@@ -667,7 +668,7 @@ class Storehouse(gym.Env):
                 )  # Move outer ring
                 # assert not (movement in self.outpoints.outpoints and ag.got_item != self.outpoints.desired_material) # Incorrect material
             else:
-                assert not (movement in self.outpoints.outpoints)
+                assert movement not in self.outpoints.outpoints
                 # assert not (movement in [entrypoint.position for entrypoint in self.entrypoints] and not any([entrypoint.material_queue[0]['timer'] for entrypoint in self.entrypoints])) # Move to entrypoints if there is no material
             assert movement not in self.restricted_cells
             self.num_invalid = 0
@@ -676,44 +677,46 @@ class Storehouse(gym.Env):
             self.num_invalid += 1
             return 0
         if self.grid[movement] > 0:  # If cell has object TAKE
-            try:
-                assert not ag.got_item  # Check if it can take an object
-                if movement not in [entrypoint.position for entrypoint in self.entrypoints]:
-                    assert self.grid[movement] in [box.id for box in self.material.values()]
-            except AssertionError:
-                # logging.error("Agent has object but ordered to take another object")
-                return 0
-            ag.position = movement
-            ag.got_item = self.grid[ag.position]  # Store ID of the taken object
-            self.grid[ag.position] = 0
-            self.update_restricted_cells(ag)  # Update the restricted cell list with the new actions
-            return 1
+            return self.take_item(ag, movement)
         else:  # If cell doesnt have object DROP
-            try:
-                assert ag.got_item  # Check if it can drop an object
-            except AssertionError:
-                ag.position = movement
-                return 3
+            return self.drop_item(ag, movement)
+
+    def drop_item(self, ag, movement):
+        try:
+            assert ag.got_item  # Check if it can drop an object
+        except AssertionError:
             ag.position = movement
-            self.grid[ag.position] = ag.got_item
-            self.material[ag.got_item].position = movement
-            ag.got_item = 0
-            self.update_restricted_cells(ag)  # Update the restricted cell list with the new actions
-            return 2
+            return 3
+        ag.position = movement
+        self.grid[ag.position] = ag.got_item
+        self.material[ag.got_item].position = movement
+        ag.got_item = 0
+        self.update_restricted_cells(ag)  # Update the restricted cell list with the new actions
+        return 2
+
+    def take_item(self, ag, movement):
+        try:
+            assert not ag.got_item  # Check if it can take an object
+            if movement not in [entrypoint.position for entrypoint in self.entrypoints]:
+                assert self.grid[movement] in [box.id for box in self.material.values()]
+        except AssertionError:
+            # logging.error("Agent has object but ordered to take another object")
+            return 0
+        ag.position = movement
+        ag.got_item = self.grid[ag.position]  # Store ID of the taken object
+        self.grid[ag.position] = 0
+        self.update_restricted_cells(ag)  # Update the restricted cell list with the new actions
+        return 1
 
     def _step(self, action: tuple, render=False) -> list:
 
-        # Assuming 1 agent
-        agent = self.agents[0]
-        ####
-
-        info = dict()
         self.num_actions += 1
-        info["Steps"] = self.num_actions
+        info = {"Steps": self.num_actions}
         # Done conditions
         if len(self.material) >= (self.grid.shape[0] - 2) * (self.grid.shape[1] - 2) * 9 / 10:  # If storehouse at 90%
             self.score.ultra_negative_achieved = True
             self.done = True
+        agent = self.agents[0]  # Assuming 1 agent
         # if self.num_invalid >= MAX_INVALID:
         #     self.score.ultra_negative_achieved = True
         #     self.done = True
@@ -783,9 +786,10 @@ class Storehouse(gym.Env):
         box = Box(
             id=self.max_id,
             position=position,
-            type=type if type else random.choice(list(self.type_information.keys())),
-            age=age if age else random.choice(range(100)),  # Magic number
+            type=type or random.choice(list(self.type_information.keys())),
+            age=age or random.choice(range(100)),
         )
+
         self.max_id += 1
         return box
 
@@ -806,20 +810,21 @@ class Storehouse(gym.Env):
                 timer = round(np.random.poisson(10))  # Magic number
                 self.outpoints.delivery_schedule.append({"type": type, "timer": timer, "num_boxes": num_boxes})
 
-    def reset(self, render=False, random=False) -> list:
+    def reset(self, render=False) -> list:
         global EPISODE
         EPISODE += 1
-        self.signature = dict()
-        self.restricted_cells = list()
-        self.episode = list()
+        random_flag = self.random_start
+        self.signature = {}
+        self.restricted_cells = []
+        self.episode = []
         self.grid = np.zeros(self.grid.shape)
 
-        self.material = dict()
+        self.material = {}
         self.outpoints.reset()
         for entrypoint in self.entrypoints:
             entrypoint.reset()
 
-        if random:
+        if random_flag:
             self.reset_random()
         else:
             self.agents = [Agent(initial_position=(3, 3)) for _ in range(self.num_agents)]
@@ -862,11 +867,8 @@ class Storehouse(gym.Env):
         """
         Encodes the grid from numbers to letters
         """
-        if num == 0:
-            return " "
-        else:
-            return str(chr(int(ord("A") - 1 + num)))  # For changing numbers into letters
-            # return str(num)
+        return " " if num == 0 else str(chr(int(ord("A") - 1 + num)))
+        # return str(num)
 
     @staticmethod
     def decode(letter: str) -> int:
@@ -887,8 +889,7 @@ class Storehouse(gym.Env):
         Red: Restricted cells
         Letter with black background: Box of the letter type
         """
-        maze = ""
-        maze += "+"
+        maze = "" + "+"
         for _ in range(self.grid.shape[1] * 2 - 1):
             maze += "-"
         maze += "+\n"
@@ -897,19 +898,17 @@ class Storehouse(gym.Env):
             for e, element in enumerate(row):
                 if element == 0:
                     encoded_el = " "
+                elif (r, e) in [entrypoint.position for entrypoint in self.entrypoints]:
+                    encoded_el = [
+                        self.entrypoints[ii].material_queue[0]["material"].type
+                        for ii in range(len(self.entrypoints))
+                        if self.entrypoints[ii].position == (r, e)
+                    ][0]
                 else:
-                    if (r, e) in [entrypoint.position for entrypoint in self.entrypoints]:
-                        encoded_el = [
-                            self.entrypoints[ii].material_queue[0]["material"].type
-                            for ii in range(len(self.entrypoints))
-                            if self.entrypoints[ii].position == (r, e)
-                        ][0]
-                    else:
-                        encoded_el = self.material[element].type
+                    encoded_el = self.material[element].type
                 try:
-                    if element > 0:
-                        if (r, e) in self.restricted_cells:
-                            encoded_el = f"{Back.RED}{Fore.BLACK}{self.material[element].type}{Style.RESET_ALL}"
+                    if element > 0 and (r, e) in self.restricted_cells:
+                        encoded_el = f"{Back.RED}{Fore.BLACK}{self.material[element].type}{Style.RESET_ALL}"
                     for agent in self.agents:
                         if agent.position == (r, e):
                             if agent.got_item:
