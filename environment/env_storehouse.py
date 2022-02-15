@@ -563,7 +563,21 @@ class Storehouse(gym.Env):
 
     def save_state_simplified(self, reward: int, action: tuple):
         state = self.get_signature()
-        self.episode.append({"step": action, "reward": reward, "state": state})
+        self.episode.append(
+            {
+                "step": action,
+                "reward": reward,
+                "state": {
+                    key: value
+                    if key not in ["entrypoints", "outpoints"]
+                    else {"pos": value["pos"]}
+                    if key == "outpoints"
+                    else {"pos": [pos["pos"] for pos in value]}
+                    for key, value in state.items()
+                    if key not in ["material_raw", "agents_raw"]
+                },
+            }
+        )
 
     def get_state(self) -> list:
         box_grid = np.zeros(self.grid.shape)
@@ -940,9 +954,9 @@ if __name__ == "__main__":
 
     env = Storehouse()
     n_a = env.action_space.n
-    for i in range(10):
+    for _ in range(10):
         env.reset(1)
-        env.render()
+        # env.render()
         done = False
         t = 0
         while not done and t < 100:
