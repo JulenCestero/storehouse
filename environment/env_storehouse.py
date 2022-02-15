@@ -202,6 +202,7 @@ class Storehouse(gym.Env):
         self.action = None
         self.num_actions = 0
         self.num_invalid = 0
+        self.cum_reward = 0
         self.action_mask = np.zeros(len(list(range(self.action_space.n))))
         if save_episodes:
             self.episode_folder = self.logname.parent / "episodes"
@@ -567,6 +568,7 @@ class Storehouse(gym.Env):
             {
                 "step": action,
                 "reward": reward,
+                "cum_reward": self.cum_reward,
                 "state": {
                     key: value
                     if key not in ["entrypoints", "outpoints"]
@@ -784,6 +786,7 @@ class Storehouse(gym.Env):
             self.grid[entrypoint.position] = entrypoint.update_entrypoint()
         info["entrypoint queue"] = [len(entrypoint.material_queue) for entrypoint in self.entrypoints]
         info["outpoint queue"] = self.outpoints.delivery_schedule
+        self.cum_reward += reward
         self.save_state_simplified(reward, action)
         if render:
             self.render()
@@ -848,6 +851,7 @@ class Storehouse(gym.Env):
         self.score.reset()
         self.num_invalid = 0
         self.number_actions = 0
+        self.cum_reward = 0
         if render:
             self.render()
         return self.get_state()
