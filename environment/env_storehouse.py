@@ -455,10 +455,6 @@ class Storehouse(gym.Env):
                     if self.grid[ii][jj] == 0 and (ii, jj) not in self.restricted_cells
                 )
             )
-
-        if not len(result):
-            raise Exception
-
         return result
 
     def get_available_cells(self):
@@ -572,7 +568,7 @@ class Storehouse(gym.Env):
                 "state": {
                     key: value
                     if key not in ["entrypoints", "outpoints"]
-                    else {"pos": value["pos"]}
+                    else {"pos": value["pos"], "accepted_types": value["accepted_types"]}
                     if key == "outpoints"
                     else {"pos": [pos["pos"] for pos in value]}
                     for key, value in state.items()
@@ -724,15 +720,19 @@ class Storehouse(gym.Env):
         self.update_restricted_cells(ag)  # Update the restricted cell list with the new actions
         return 1
 
+    # def check_full_occupation(self):
+    #     max_occupation = 0.9  # Magic number
+    #     return len(self.material) >= (self.grid.shape[0] - 2) * (self.grid.shape[1] - 2) * max_occupation
+
     def _step(self, action: tuple, render=False) -> list:
 
         self.num_actions += 1
         info = {"Steps": self.num_actions}
+        agent = self.agents[0]  # Assuming 1 agent
         # Done conditions
-        if len(self.material) >= (self.grid.shape[0] - 2) * (self.grid.shape[1] - 2) * 9 / 10:  # If storehouse at 90%
+        if not len(self.get_free_storage_of_grid()):  # If storehouse full
             self.score.ultra_negative_achieved = True
             self.done = True
-        agent = self.agents[0]  # Assuming 1 agent
         # if self.num_invalid >= MAX_INVALID:
         #     self.score.ultra_negative_achieved = True
         #     self.done = True
@@ -852,6 +852,8 @@ class Storehouse(gym.Env):
         self.num_invalid = 0
         self.number_actions = 0
         self.cum_reward = 0
+        if not len(self.get_free_storage_of_grid()):
+            return self.reset(render)
         if render:
             self.render()
         return self.get_state()
