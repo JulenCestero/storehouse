@@ -838,6 +838,7 @@ class Storehouse(gym.Env):
         self.restricted_cells = []
         self.episode = []
         self.grid = np.zeros(self.grid.shape)
+        self.num_actions = 0
 
         self.material = {}
         self.outpoints.reset()
