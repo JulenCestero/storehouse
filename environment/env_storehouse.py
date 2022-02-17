@@ -186,6 +186,7 @@ class Storehouse(gym.Env):
         self.feature_number = FEATURE_NUMBER + len(self.type_information) - 1
         self.score = Score()
         self.episode = []
+        self.available_actions = []
         self.logname = Path(logname)
         self.save_episodes = save_episodes
         self.transpose_state = transpose_state
@@ -407,8 +408,8 @@ class Storehouse(gym.Env):
                     if self.grid[ii][jj] == 0 and (ii, jj) != agent.position
                 )
 
-            if not len(free_storage):
-                raise Exception
+            # if not len(free_storage):
+            #     raise Exception
             if self.material[agent.got_item].type in ready_to_consume_types:  # Outpoints open
                 available_actions = list(self.outpoints.outpoints) + free_storage
             else:  # Outpoints closed
@@ -444,6 +445,8 @@ class Storehouse(gym.Env):
             print(e)
             print(available_actions)
             raise IndexError from e
+        self.available_actions = available_actions
+        return available_actions
 
     def get_free_storage_of_grid(self):
         result = []
@@ -730,7 +733,7 @@ class Storehouse(gym.Env):
         info = {"Steps": self.num_actions}
         agent = self.agents[0]  # Assuming 1 agent
         # Done conditions
-        if not len(self.get_free_storage_of_grid()):  # If storehouse full
+        if not len(self.available_actions):  # If storehouse full
             self.score.ultra_negative_achieved = True
             self.done = True
         # if self.num_invalid >= MAX_INVALID:
@@ -852,7 +855,7 @@ class Storehouse(gym.Env):
         self.num_invalid = 0
         self.number_actions = 0
         self.cum_reward = 0
-        if not len(self.get_free_storage_of_grid()):
+        if not len(self.get_available_actions()):
             return self.reset(render)
         if render:
             self.render()
