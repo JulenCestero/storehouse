@@ -173,6 +173,7 @@ class Storehouse(gym.Env):
         max_orders: int = MAX_ORDERS,
         augment: bool = None,
         random_start: bool = False,
+        normalized_state: bool = False,
     ):
         self.signature = {}
         self.max_id = 1
@@ -183,6 +184,7 @@ class Storehouse(gym.Env):
         if augment is not None:
             self.augmented = augment
         self.random_start = random_start
+        self.normalized_state = normalized_state
         self.feature_number = FEATURE_NUMBER + len(self.type_information) - 1
         self.score = Score()
         self.episode = []
@@ -643,7 +645,9 @@ class Storehouse(gym.Env):
             state_mix = np.array(
                 [box_grid, restricted_grid, entrypoint_grid, age_grid, agent_grid, agent_material_grid] + outpoint_grids
             )
-
+        if self.normalized_state:
+            for ii, matrix in enumerate(state_mix):
+                state_mix[ii] = matrix / 255
         self.get_available_actions()
         self.signature = self.get_signature()
         if self.transpose_state:
