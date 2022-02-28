@@ -195,7 +195,8 @@ class Storehouse(gym.Env):
         else:
             size = self.grid.shape
         self.action_space = gym.spaces.Discrete(self.grid.shape[0] * self.grid.shape[1])
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(size[0], size[1], self.feature_number), dtype=np.uint8)
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(size[0], size[1], self.feature_number),
+                                                dtype=np.uint8)
         self.material = {}  # dict of objects of the class box. {id: Box} form of the dict. ID > 0
         self.restricted_cells = []  # list of coordinates to where the agent cannot move
         self.agents = [Agent((0, 0)) for _ in range(self.num_agents)]
