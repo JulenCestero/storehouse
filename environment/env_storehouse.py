@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import operator
@@ -538,8 +539,8 @@ class Storehouse(gym.Env):
             }
             for agent in self.agents
         ]
-        state["agents_raw"] = self.agents
-        state["material_raw"] = self.material
+        state["agents_raw"] = copy.deepcopy(self.agents)
+        state["material_raw"] = copy.deepcopy(self.material)
         state["entrypoints"] = [
             {
                 "pos": ep.position,
