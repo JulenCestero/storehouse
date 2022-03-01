@@ -184,7 +184,7 @@ class Storehouse(gym.Env):
         random_start: bool = False,
         normalized_state: bool = False,
     ):
-        # self.signature = {}
+        self.signature = {}
         self.max_id = 1
         self.max_steps = max_steps
         self.max_orders = max_orders
@@ -524,7 +524,7 @@ class Storehouse(gym.Env):
         if self.agents[0].got_item:
             self.grid[self.agents[0].position] = 0
         self.max_id = signature["max_id"]
-        # self.signature = signature
+        self.signature = signature
 
     def get_signature(self) -> dict:
         state = {
@@ -661,7 +661,7 @@ class Storehouse(gym.Env):
             for ii, matrix in enumerate(state_mix):
                 state_mix[ii] = matrix / 255
         self.get_available_actions()
-        # self.signature = self.get_signature()
+        self.signature = self.get_signature()
         if self.transpose_state:
             return state_mix.reshape(size + (self.feature_number,)).transpose([2, 0, 1])
         else:
@@ -850,7 +850,7 @@ class Storehouse(gym.Env):
         global EPISODE
         EPISODE += 1
         random_flag = self.random_start
-        # self.signature = {}
+        self.signature = {}
         self.restricted_cells = []
         self.episode = []
         self.grid = np.zeros(self.grid.shape)
