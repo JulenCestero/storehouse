@@ -61,6 +61,10 @@ class Agent:
         self.position = initial_position
         self.got_item = got_item  # Id of the box it is carrying, 0 if none
 
+    def __eq__(self, other):
+        if(isinstance(other, Agent)):
+            return self.position == other.position and self.got_item == other.got_item
+
 
 class Entrypoint:
     def __init__(self, position: tuple, type_information: dict):
@@ -176,7 +180,7 @@ class Storehouse(gym.Env):
         random_start: bool = False,
         normalized_state: bool = False,
     ):
-        self.signature = {}
+        # self.signature = {}
         self.max_id = 1
         self.max_steps = max_steps
         self.max_orders = max_orders
@@ -494,15 +498,18 @@ class Storehouse(gym.Env):
     def set_signature(self, signature: dict) -> None:
         self.reset()
         self.done = signature["done"]
-        self.agents = signature["agents_raw"]
-        self.material = signature["material_raw"]
+        self.agents = copy.deepcopy(signature["agents_raw"])
+        self.material = copy.deepcopy(signature["material_raw"])
         self.calculate_restricted_cells()
-        self.outpoints.delivery_schedule = signature["outpoints"]["delivery_schedule"]
-        self.outpoints.desired_material = signature["outpoints"]["desired_material"]
-        self.outpoints.last_delivery_timers = signature["outpoints"]["last_delivery_timers"]
+        self.outpoints.delivery_schedule = copy.deepcopy(signature["outpoints"]["delivery_schedule"])
+        self.outpoints.desired_material = copy.deepcopy(signature["outpoints"]["desired_material"])
+        self.outpoints.last_delivery_timers = copy.deepcopy(signature["outpoints"]["last_delivery_timers"])
         for ep, info in zip(self.entrypoints, signature["entrypoints"]):
-            ep.material_queue = info["material_queue_raw"]
-            ep.wait_time_cumulate = info["wait_time_cumulate"]
+            ep.material_queue = copy.deepcopy(info["material_queue_raw"])
+            ep.wait_time_cumulate = copy.deepcopy(info["wait_time_cumulate"])
+            ep.position = copy.deepcopy(info["pos"])
+            ep.material_queue = [{"timer": item["timer"], "type": item["material"].type} for item in
+                      copy.deepcopy(info["queue"])]
         self.num_actions = signature["num_actions"]
         for box in list(self.material.values()) + [
             queue[0]["material"]
@@ -513,7 +520,7 @@ class Storehouse(gym.Env):
         if self.agents[0].got_item:
             self.grid[self.agents[0].position] = 0
         self.max_id = signature["max_id"]
-        self.signature = signature
+        # self.signature = signature
 
     def get_signature(self) -> dict:
         state = {
@@ -531,22 +538,23 @@ class Storehouse(gym.Env):
         }
 
         state["restricted_cell"] = list(self.restricted_cells)
+        agents = copy.deepcopy(self.agents)
         state["agents"] = [
             {
                 "pos": agent.position,
                 "item": self.material[agent.got_item].type if agent.got_item > 0 else 0,
                 "item_id": int(agent.got_item) if agent.got_item > 0 else 0,
             }
-            for agent in self.agents
+            for agent in agents
         ]
-        state["agents_raw"] = copy.deepcopy(self.agents)
+        state["agents_raw"] = agents
         state["material_raw"] = copy.deepcopy(self.material)
         state["entrypoints"] = [
             {
-                "pos": ep.position,
-                "queue": [{"timer": item["timer"], "type": item["material"].type} for item in ep.material_queue],
+                "pos": copy.deepcopy(ep.position),
+                "queue": [{"timer": item["timer"], "type": item["material"].type} for item in copy.deepcopy(ep.material_queue)],
                 "material_queue_raw": copy.deepcopy(ep.material_queue),
-                "wait_time_cumulate": ep.wait_time_cumulate,
+                "wait_time_cumulate": copy.deepcopy(ep.wait_time_cumulate),
             }
             for ep in self.entrypoints
         ]
@@ -555,11 +563,11 @@ class Storehouse(gym.Env):
         except IndexError:
             ready_to_consume_types = []
         state["outpoints"] = {
-            "pos": self.outpoints.outpoints,
-            "accepted_types": list(set(ready_to_consume_types)),
-            "delivery_schedule": self.outpoints.delivery_schedule,
-            "desired_material": self.outpoints.desired_material,
-            "last_delivery_timers": self.outpoints.last_delivery_timers,
+            "pos": copy.deepcopy(self.outpoints.outpoints),
+            "accepted_types": list(set(copy.deepcopy(ready_to_consume_types))),
+            "delivery_schedule": copy.deepcopy(self.outpoints.delivery_schedule),
+            "desired_material": copy.deepcopy(self.outpoints.desired_material),
+            "last_delivery_timers": copy.deepcopy(self.outpoints.last_delivery_timers),
         }
         state["num_actions"] = self.num_actions
         return state
@@ -650,7 +658,7 @@ class Storehouse(gym.Env):
             for ii, matrix in enumerate(state_mix):
                 state_mix[ii] = matrix / 255
         self.get_available_actions()
-        self.signature = self.get_signature()
+        # self.signature = self.get_signature()
         if self.transpose_state:
             return state_mix.reshape(size + (self.feature_number,)).transpose([2, 0, 1])
         else:
@@ -839,7 +847,7 @@ class Storehouse(gym.Env):
         global EPISODE
         EPISODE += 1
         random_flag = self.random_start
-        self.signature = {}
+        # self.signature = {}
         self.restricted_cells = []
         self.episode = []
         self.grid = np.zeros(self.grid.shape)
