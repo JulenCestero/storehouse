@@ -54,6 +54,10 @@ class Box:
     def update_age(self):
         self.age += 1
 
+    def __eq__(self, other):
+        if(isinstance(other, Box)):
+            return (self.position == other.position and self.age == other.age
+                    and self.id == other.id and self.age == other.age)
 
 class Agent:
     def __init__(self, initial_position: tuple, got_item: int = 0):
@@ -508,8 +512,8 @@ class Storehouse(gym.Env):
             ep.material_queue = copy.deepcopy(info["material_queue_raw"])
             ep.wait_time_cumulate = copy.deepcopy(info["wait_time_cumulate"])
             ep.position = copy.deepcopy(info["pos"])
-            ep.material_queue = [{"timer": item["timer"], "type": item["material"].type} for item in
-                      copy.deepcopy(info["queue"])]
+            # ep.material_queue = [{"timer": item["timer"], "type": item["material"].type} for item in
+            #           copy.deepcopy(info["queue"])]
         self.num_actions = signature["num_actions"]
         for box in list(self.material.values()) + [
             queue[0]["material"]
@@ -539,20 +543,19 @@ class Storehouse(gym.Env):
 
         state["restricted_cell"] = list(self.restricted_cells)
         agents = copy.deepcopy(self.agents)
-        state["agents"] = [
-            {
-                "pos": agent.position,
-                "item": self.material[agent.got_item].type if agent.got_item > 0 else 0,
-                "item_id": int(agent.got_item) if agent.got_item > 0 else 0,
-            }
-            for agent in agents
-        ]
+        # state["agents"] = [
+        #     {
+        #         "pos": agent.position,
+        #         "item": self.material[agent.got_item].type if agent.got_item > 0 else 0,
+        #         "item_id": int(agent.got_item) if agent.got_item > 0 else 0,
+        #     }
+        #     for agent in agents
+        # ]
         state["agents_raw"] = agents
         state["material_raw"] = copy.deepcopy(self.material)
         state["entrypoints"] = [
             {
                 "pos": copy.deepcopy(ep.position),
-                "queue": [{"timer": item["timer"], "type": item["material"].type} for item in copy.deepcopy(ep.material_queue)],
                 "material_queue_raw": copy.deepcopy(ep.material_queue),
                 "wait_time_cumulate": copy.deepcopy(ep.wait_time_cumulate),
             }
