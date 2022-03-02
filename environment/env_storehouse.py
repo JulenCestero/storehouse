@@ -55,9 +55,9 @@ class Box:
         self.age += 1
 
     def __eq__(self, other):
-        if(isinstance(other, Box)):
-            return (self.position == other.position and self.age == other.age
-                    and self.id == other.id and self.age == other.age)
+        if isinstance(other, Box):
+            return self.position == other.position and self.age == other.age and self.id == other.id and self.age == other.age
+
 
 class Agent:
     def __init__(self, initial_position: tuple, got_item: int = 0):
@@ -66,7 +66,7 @@ class Agent:
         self.got_item = got_item  # Id of the box it is carrying, 0 if none
 
     def __eq__(self, other):
-        if(isinstance(other, Agent)):
+        if isinstance(other, Agent):
             return self.position == other.position and self.got_item == other.got_item
 
 
