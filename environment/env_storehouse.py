@@ -816,6 +816,7 @@ class Storehouse(gym.Env):
         norm_action = (int(action / self.grid.shape[0]), int(action % self.grid.shape[0]))
         self.action = norm_action
         state, reward, done, info = self._step(norm_action)
+        info["delivered"] = self.score.delivered_boxes
         return state, reward, done, info
 
     def create_random_box(self, position: tuple, type: str = None, age: int = None):
