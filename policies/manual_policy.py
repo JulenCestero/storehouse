@@ -53,10 +53,7 @@ def deliver_from_entrypoints(env: Storehouse, available_types: list, entrypoints
         for ep in entrypoints_with_items
         if ep.material_queue[0]["material"].type in available_types
     ]
-    if len(boxes) > 1:
-        da_box = np.random.choice(boxes)
-    else:
-        da_box = boxes[0]
+    da_box = np.random.choice(boxes) if len(boxes) > 1 else boxes[0]
     state, reward, done, info = env._step(da_box.position)
     if VISUAL:
         print(f"General action: deliver from entrypoint \nAction: {da_box.position}\nReward: {reward}\n{info}")
@@ -80,13 +77,14 @@ def deliver_from_entrypoints(env: Storehouse, available_types: list, entrypoints
 
 def deliver_item(env: Storehouse, available_types: list):
     oldest_box = max(
-        [
+        (
             material
             for material in env.material.values()
             if material.type in available_types and material.position not in env.restricted_cells
-        ],
+        ),
         key=operator.attrgetter("age"),
     )
+
     state, reward, done, info = env._step(oldest_box.position)
     if VISUAL:
         print(f"General action: deliver_item\nAction: {oldest_box.position}\nReward: {reward}\n{info}")
@@ -124,13 +122,13 @@ def initial_human_policy(env: Storehouse, state: np.array):
     try:
         ready_to_consume_types = [order["type"] for order in env.outpoints.delivery_schedule if order["timer"] == 0]
     except IndexError:
-        ready_to_consume_types = list()
+        ready_to_consume_types = []
     try:
         entrypoints_with_items = [
             ep for ep in [ep for ep in env.entrypoints if len(ep.material_queue) > 0] if ep.material_queue[0]["timer"] == 0
         ]
     except IndexError:
-        entrypoints_with_items = list()
+        entrypoints_with_items = []
     if any(entrypoints_with_items):
         store_item(env, entrypoints_with_items)
     elif (
@@ -153,13 +151,13 @@ def enhanced_human_policy(env: Storehouse, state: np.array):
     try:
         ready_to_consume_types = [order["type"] for order in env.outpoints.delivery_schedule if order["timer"] == 0]
     except IndexError:
-        ready_to_consume_types = list()
+        ready_to_consume_types = []
     try:
         entrypoints_with_items = [
             ep for ep in [ep for ep in env.entrypoints if len(ep.material_queue) > 0] if ep.material_queue[0]["timer"] == 0
         ]
     except IndexError:
-        entrypoints_with_items = list()
+        entrypoints_with_items = []
     if any(ready_to_consume_types):
         if len(
             [
@@ -193,25 +191,25 @@ def enhanced_human_policy(env: Storehouse, state: np.array):
 @click.option("-c", "--conf_name", default="6x6fast")
 @click.option("-m", "--max_steps", default=50)
 @click.option("-r", "--render", default=0)
-def main(log_folder, policy, conf_name, max_steps, render):
+@click.option("-t", "--timesteps", default=STEPS)
+@click.option("-s", "--save_episodes", default=False)
+def main(log_folder, policy, conf_name, max_steps, render, timesteps, save_episodes):
     global VISUAL
     global SLEEP_TIME
     VISUAL = int(render)
-    if render:
-        SLEEP_TIME = 0.2
-    else:
-        SLEEP_TIME = 0.00
+    SLEEP_TIME = 0.2 if render else 0.00
     env = Storehouse(
         "log/log" if not log_folder else log_folder,
-        logging=True if log_folder else False,
-        save_episodes=False,
+        logging=bool(log_folder),
+        save_episodes=save_episodes,
         conf_name=conf_name,
         max_steps=int(max_steps),
     )
+
     s = env.reset(VISUAL)
     if not VISUAL:
-        pbar = tqdm(total=STEPS)
-    for _ in range(STEPS):
+        pbar = tqdm(total=timesteps)
+    for _ in range(timesteps):
         if policy == "ehp":
             enhanced_human_policy(env, s)
         elif policy == "ihp":

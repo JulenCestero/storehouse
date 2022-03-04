@@ -811,11 +811,13 @@ class Storehouse(gym.Env):
             self.render()
         return self.get_state(), reward, self.done, info
 
-    def step(self, action: int) -> list:
+    def norm_action(self, action) -> tuple:
         assert action < self.grid.shape[0] * self.grid.shape[1] and action >= 0
-        norm_action = (int(action / self.grid.shape[0]), int(action % self.grid.shape[0]))
-        self.action = norm_action
-        state, reward, done, info = self._step(norm_action)
+        return (int(action / self.grid.shape[0]), int(action % self.grid.shape[0]))
+
+    def step(self, action: int) -> list:
+        self.action = self.norm_action(action)
+        state, reward, done, info = self._step(self.action)
         return state, reward, done, info
 
     def create_random_box(self, position: tuple, type: str = None, age: int = None):
