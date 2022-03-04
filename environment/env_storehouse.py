@@ -818,6 +818,7 @@ class Storehouse(gym.Env):
     def step(self, action: int) -> list:
         self.action = self.norm_action(action)
         state, reward, done, info = self._step(self.action)
+        info["delivered"] = self.score.delivered_boxes
         return state, reward, done, info
 
     def create_random_box(self, position: tuple, type: str = None, age: int = None):
