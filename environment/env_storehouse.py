@@ -761,6 +761,7 @@ class Storehouse(gym.Env):
             info["done"] = "Max movements achieved. Well done!"
             if self.log_flag:
                 self.log(action)
+            self.last_r = reward
             return self.get_state(), reward, self.done, info
         ####
 
@@ -790,6 +791,7 @@ class Storehouse(gym.Env):
         else:
             info["Info"] = "Done. Please reset the environment"
             reward = -1e3
+            self.last_r = reward
             return self.get_state(), reward, self.done, info
         # Update environment unrelated to agent interaction
         self.outpoints_consume()
@@ -809,6 +811,7 @@ class Storehouse(gym.Env):
         self.save_state_simplified(reward, action)
         if render:
             self.render()
+        self.last_r = reward
         return self.get_state(), reward, self.done, info
 
     def step(self, action: int) -> list:
@@ -817,6 +820,7 @@ class Storehouse(gym.Env):
         self.action = norm_action
         state, reward, done, info = self._step(norm_action)
         info["delivered"] = self.score.delivered_boxes
+        self.last_r = reward
         return state, reward, done, info
 
     def create_random_box(self, position: tuple, type: str = None, age: int = None):
