@@ -20,7 +20,7 @@ MAX_INVALID = 10
 MAX_MOVEMENTS = 1000  # 50
 MIN_CNN_LEN = 32
 AUGMENT_FACTOR = 10
-EPISODE = 1
+EPISODE = 0
 
 
 class Score:
@@ -217,7 +217,7 @@ class Storehouse(gym.Env):
         self.cum_reward = 0
         self.action_mask = np.zeros(len(list(range(self.action_space.n))))
         if save_episodes:
-            self.episode_folder = self.logname.parent / "episodes"
+            self.episode_folder = self.logname / "episodes"
             self.episode_folder.mkdir(parents=True, exist_ok=True)
         if self.log_flag:
             self.logname.mkdir(parents=True, exist_ok=True)
@@ -543,14 +543,14 @@ class Storehouse(gym.Env):
 
         state["restricted_cell"] = list(self.restricted_cells)
         agents = copy.deepcopy(self.agents)
-        # state["agents"] = [
-        #     {
-        #         "pos": agent.position,
-        #         "item": self.material[agent.got_item].type if agent.got_item > 0 else 0,
-        #         "item_id": int(agent.got_item) if agent.got_item > 0 else 0,
-        #     }
-        #     for agent in agents
-        # ]
+        state["agents"] = [
+            {
+                "pos": agent.position,
+                "item": self.material[agent.got_item].type if agent.got_item > 0 else 0,
+                "item_id": int(agent.got_item) if agent.got_item > 0 else 0,
+            }
+            for agent in agents
+        ]
         state["agents_raw"] = agents
         state["material_raw"] = copy.deepcopy(self.material)
         state["entrypoints"] = [
@@ -589,7 +589,7 @@ class Storehouse(gym.Env):
                     if key == "outpoints"
                     else {"pos": [pos["pos"] for pos in value]}
                     for key, value in state.items()
-                    if key not in ["material_raw", "agents_raw"]
+                    if key not in ["material_raw", "agents_raw", "done", "max_id"]
                 },
             }
         )
@@ -814,11 +814,13 @@ class Storehouse(gym.Env):
         self.last_r = reward
         return self.get_state(), reward, self.done, info
 
-    def step(self, action: int) -> list:
+    def norm_action(self, action) -> tuple:
         assert action < self.grid.shape[0] * self.grid.shape[1] and action >= 0
-        norm_action = (int(action / self.grid.shape[0]), int(action % self.grid.shape[0]))
-        self.action = norm_action
-        state, reward, done, info = self._step(norm_action)
+        return (int(action / self.grid.shape[0]), int(action % self.grid.shape[0]))
+
+    def step(self, action: int) -> list:
+        self.action = self.norm_action(action)
+        state, reward, done, info = self._step(self.action)
         info["delivered"] = self.score.delivered_boxes
         self.last_r = reward
         return state, reward, done, info
