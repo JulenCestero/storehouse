@@ -744,7 +744,7 @@ class Storehouse(gym.Env):
     #     return len(self.material) >= (self.grid.shape[0] - 2) * (self.grid.shape[1] - 2) * max_occupation
 
     def _step(self, action: tuple, render=False) -> list:
-
+        self.last_action = self.denorm_action(action)
         self.num_actions += 1
         info = {"Steps": self.num_actions}
         agent = self.agents[0]  # Assuming 1 agent
@@ -762,6 +762,8 @@ class Storehouse(gym.Env):
             if self.log_flag:
                 self.log(action)
             self.last_r = reward
+            info["delivered"] = self.score.delivered_boxes
+            self.last_info = info
             return self.get_state(), reward, self.done, info
         ####
 
@@ -792,6 +794,8 @@ class Storehouse(gym.Env):
             info["Info"] = "Done. Please reset the environment"
             reward = -1e3
             self.last_r = reward
+            info["delivered"] = self.score.delivered_boxes
+            self.last_info = info
             return self.get_state(), reward, self.done, info
         # Update environment unrelated to agent interaction
         self.outpoints_consume()
@@ -812,17 +816,25 @@ class Storehouse(gym.Env):
         if render:
             self.render()
         self.last_r = reward
+        info["delivered"] = self.score.delivered_boxes
+        self.last_info = info
         return self.get_state(), reward, self.done, info
 
     def norm_action(self, action) -> tuple:
         assert action < self.grid.shape[0] * self.grid.shape[1] and action >= 0
         return (int(action / self.grid.shape[0]), int(action % self.grid.shape[0]))
 
+    def denorm_action(self, action:tuple) -> int:
+        a = action[0] * self.grid.shape[0] + action[1]
+        return a
+
     def step(self, action: int) -> list:
         self.action = self.norm_action(action)
+        assert action == self.denorm_action(self.action)
         state, reward, done, info = self._step(self.action)
         info["delivered"] = self.score.delivered_boxes
         self.last_r = reward
+        self.last_info = info
         return state, reward, done, info
 
     def create_random_box(self, position: tuple, type: str = None, age: int = None):
