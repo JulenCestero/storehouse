@@ -15,7 +15,7 @@ CONF_NAME = "6x6"
 MAX_ORDERS = 3
 MAX_NUM_BOXES = 6
 MIN_NUM_BOXES = 2
-FEATURE_NUMBER = 7
+FEATURE_NUMBER = 4
 MAX_INVALID = 10
 MAX_MOVEMENTS = 1000  # 50
 MIN_CNN_LEN = 32
@@ -194,7 +194,7 @@ class Storehouse(gym.Env):
             self.augmented = augment
         self.random_start = random_start
         self.normalized_state = normalized_state
-        self.feature_number = FEATURE_NUMBER + len(self.type_information) - 1
+        self.feature_number = FEATURE_NUMBER
         self.score = Score()
         self.episode = []
         self.available_actions = []
@@ -398,7 +398,7 @@ class Storehouse(gym.Env):
     def decode_action(self, action: tuple):
         return action[0] * self.grid.shape[0] + action[1]
 
-    def get_available_actions(self) -> None:
+    def get_available_actions(self) -> list:
         ### Assuming 1 agent
         agent = self.agents[0]
         ####################
@@ -419,8 +419,6 @@ class Storehouse(gym.Env):
                     if self.grid[ii][jj] == 0 and (ii, jj) != agent.position
                 )
 
-            # if not len(free_storage):
-            #     raise Exception
             if self.material[agent.got_item].type in ready_to_consume_types:  # Outpoints open
                 available_actions = list(self.outpoints.outpoints) + free_storage
             else:  # Outpoints closed
@@ -594,7 +592,76 @@ class Storehouse(gym.Env):
             }
         )
 
+    @staticmethod
+    def augment_state(box_grid, age_grid, agent_grid, available_action_grid) -> np.array:
+        return np.array(
+            [
+                np.kron(grid, np.ones((AUGMENT_FACTOR, AUGMENT_FACTOR)))
+                for grid in np.array(
+                    [
+                        box_grid,
+                        age_grid,
+                        agent_grid,
+                        available_action_grid,
+                    ]
+                )
+            ]
+        )
+
+    def mix_state(self, box_grid, age_grid, agent_grid, available_action_grid):
+        return (
+            self.augment_state(box_grid, age_grid, agent_grid, available_action_grid)
+            if self.augmented
+            else np.array([box_grid, age_grid, agent_grid, available_action_grid])
+        )
+
+    @staticmethod
+    def normalize_state(state_mix):
+        for ii, matrix in enumerate(state_mix):
+            state_mix[ii] = matrix / 255
+        return state_mix
+
+    def construct_box_grids(self, box_grid, age_grid):
+        for box in self.material.values():
+            box_grid[box.position] = self.normalize_type(box.type)
+            age_grid[box.position] = self.normalize_age(box.age)
+        return box_grid, age_grid
+
+    def construct_agent_grid(self, agent_grid):
+        # We assume that, since the positions of the agent and the object match when the agent has taken it,
+        # the network will figure out that the item of the agent corresponds to the type of the box_grid.
+        # Therefore, we delete the agent_material_grid
+        for agent in self.agents:
+            agent_grid[agent.position] = 255 if agent.got_item else 128
+        return agent_grid
+
+    def construct_av_action_grid(self, available_action_grid):
+        for action in self.get_available_actions():
+            available_action_grid[action] = 255
+        return available_action_grid
+
+    def initialize_grids(self):
+        return np.zeros(self.grid.shape), np.zeros(self.grid.shape), np.zeros(self.grid.shape), np.zeros(self.grid.shape)
+
+    def construct_grids(self):
+        box_grid, age_grid, agent_grid, available_action_grid = self.initialize_grids()
+        box_grid, age_grid = self.construct_box_grids(box_grid, age_grid)
+        return box_grid, age_grid, self.construct_agent_grid(agent_grid), self.construct_av_action_grid(available_action_grid)
+
     def get_state(self) -> list:
+        box_grid, age_grid, agent_grid, available_action_grid = self.construct_grids()
+        state_mix = self.mix_state(box_grid, age_grid, agent_grid, available_action_grid)
+        size = state_mix[0].shape
+        if self.normalized_state:
+            state_mix = self.normalize_state(state_mix)
+        self.signature = self.get_signature()
+        state_mix = state_mix.reshape(size + (self.feature_number,))
+        return state_mix.transpose([2, 0, 1]) if self.transpose_state else state_mix
+
+    def __get_state(self) -> list:
+        """
+        DEPRECATED!!!!
+        """
         box_grid = np.zeros(self.grid.shape)
         restricted_grid = np.zeros(self.grid.shape)
         entrypoint_grid = np.zeros(self.grid.shape)
@@ -824,9 +891,8 @@ class Storehouse(gym.Env):
         assert action < self.grid.shape[0] * self.grid.shape[1] and action >= 0
         return (int(action / self.grid.shape[0]), int(action % self.grid.shape[0]))
 
-    def denorm_action(self, action:tuple) -> int:
-        a = action[0] * self.grid.shape[0] + action[1]
-        return a
+    def denorm_action(self, action: tuple) -> int:
+        return action[0] * self.grid.shape[0] + action[1]
 
     def step(self, action: int) -> list:
         self.action = self.norm_action(action)
@@ -947,6 +1013,8 @@ class Storehouse(gym.Env):
         Purple: outpoint
         Red: Restricted cells
         Letter with black background: Box of the letter type
+
+        (I hope you like spaghetti)
         """
         maze = "" + "+"
         for _ in range(self.grid.shape[1] * 2 - 1):
@@ -1010,3 +1078,4 @@ if __name__ == "__main__":
             print("State:", s.shape)
             sleep(0.1)
             env.render()
+            t += 1
