@@ -393,8 +393,8 @@ class Storehouse(gym.Env):
         # self.actions_log.write(f"{action},{self.agents[0].got_item}\n")
 
     @staticmethod
-    def normalize_age(age: int) -> int:
-        return int(min(max(age, 0), 1000) / 1000 * 255)
+    def normalize_age(age: int) -> float:
+        return min(max(age, 0), 1000) / 1000 * 255
 
     def normalize_type(self, type: str) -> float:
         return (ord(type) - (ord("A") - 1)) * 255 / len(self.type_information)
@@ -404,9 +404,9 @@ class Storehouse(gym.Env):
 
     def get_ready_to_consume_types(self):
         try:
-            return [order["type"] for order in self.outpoints.delivery_schedule if order["timer"] == 0]
+            return {order["type"] for order in self.outpoints.delivery_schedule if order["timer"] == 0}
         except IndexError:
-            return []
+            return {}
 
     def get_available_actions(self) -> list:
         ### Assuming 1 agent

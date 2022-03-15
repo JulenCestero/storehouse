@@ -112,7 +112,13 @@ def wait(env: Storehouse):
     render(env, "wait", action, reward, info)
     s = check_reset(env, done)
     state = state if s is None else s
-    return state
+    return (state,)
+
+
+def idle(env: Storehouse):
+    action = (0, 1)
+    state, reward, done, info = env._step(action)
+    return state, {"action": action, "reward": reward, "info": info, "comment": "idle", "done": done}
 
 
 def initial_human_policy(env: Storehouse, state: np.array):
@@ -218,7 +224,7 @@ def get_rtct_from_state(s: np.array, out_position: list, num_types: int) -> list
 
 
 def denormalize_type(encoded_type: int, num_types: int) -> str:
-    return int_to_type(int(encoded_type / 255 * num_types))
+    return int_to_type(int(encoded_type / 255 * num_types) - 1)
 
 
 def get_epwi_from_state(s: np.array, ep_position: list, num_types: int) -> dict:
@@ -242,7 +248,7 @@ def filter_restricted_boxes(grid: np.array, num_types: int) -> dict:
                     break
             if not flag and grid[row][col] > 0:  # Not restricted_cell and cell with item
                 boxes[(row, col)] = denormalize_type(grid[row][col], num_types)
-    return boxes
+    return boxes  # form {pos: type}
 
 
 def get_ready_boxes_in_grid(s: np.array, ready_types: set, num_types: int) -> list:
@@ -260,8 +266,7 @@ def filter_age_grid(age_grid: np.array, ready_boxes: list) -> np.array:
 
 def get_oldest_box(age_grid: np.array, ready_boxes: list) -> tuple:
     grid = filter_age_grid(age_grid, ready_boxes)
-    oldest_boxes_unsorted = np.where(grid == np.amax(grid))
-    oldest_boxes = list(zip(oldest_boxes_unsorted[0], oldest_boxes_unsorted[1]))
+    oldest_boxes = get_max_position(grid)
     return oldest_boxes[np.random.choice(len(oldest_boxes))]
 
 
@@ -279,46 +284,27 @@ def check_reset(env, done) -> np.array:
     return None
 
 
-def take_oldest_item(env, state, ready_boxes) -> np.array:
+def take_item_from_grid(env, state, ready_boxes) -> np.array:
     age_grid = state[1]
     box_pos = get_oldest_box(age_grid, ready_boxes)
     state, reward, done, info = env._step(box_pos)
-    return state, reward, done, info, box_pos
+    return state, {"action": box_pos, "reward": reward, "info": info, "comment": "take item grid", "done": done}
 
 
 def deliver_box(env):
     action = env.outpoints.outpoints[0]
     state, reward, done, info = env._step(action)
-    render(env, "deliver item", action, reward, info)
-    s = check_reset(env, done)
-    state = state if s is None else s
-    sleep(SLEEP_TIME)
-    return state
+    return state, {"action": action, "reward": reward, "info": info, "comment": "deliver item", "done": done}
 
 
 def take_item_from_ep(env: Storehouse, ep: list) -> None:
     da_box = ep[np.random.choice(len(ep))]
-    _, reward, done, info = env._step(da_box)
-    render(env, "deliver from entrypoint", da_box, reward, info)
-    _ = check_reset(env, done)
-    sleep(SLEEP_TIME)
-
-
-def deliver_item_state(env: Storehouse, state: np.array, ready_boxes: list) -> np.array:
-    _, reward, done, info, action = take_oldest_item(env, state, ready_boxes)
-    render(env, "take item", action, reward, info)
-    _ = check_reset(env, done)
-    sleep(SLEEP_TIME)
-    return deliver_box(env)
+    state, reward, done, info = env._step(da_box)
+    return state, {"action": da_box, "reward": reward, "info": info, "comment": "take item ep", "done": done}
 
 
 def get_direct_items(ep_items: dict, wanted_items: list) -> list:
     return [pos for pos, ep in ep_items.items() if len(wanted_items) and ep in wanted_items]
-
-
-def deliver_from_ep_state(env: Storehouse, direct_items: list) -> np.array:
-    take_item_from_ep(env, direct_items)
-    return deliver_box(env)
 
 
 def find_target_cell(grid: np.array) -> tuple:
@@ -341,11 +327,7 @@ def deposit_item_in_grid(env: Storehouse, state: np.array) -> np.array:
         done = True
     else:
         state, reward, done, info = env._step(target_cell)
-        render(env, "store item in grid", target_cell, reward, info)
-    s = check_reset(env, done)
-    state = state if s is None else s
-    sleep(SLEEP_TIME)
-    return state
+    return state, {"action": target_cell, "reward": reward, "info": info, "comment": "store item in grid", "done": done}
 
 
 def store_item_state(env: Storehouse, state: np.array, ep_items: list) -> np.array:
@@ -353,24 +335,59 @@ def store_item_state(env: Storehouse, state: np.array, ep_items: list) -> np.arr
     return deposit_item_in_grid(env, state)
 
 
+def get_max_position(grid: np.array) -> list:
+    max_value_unsorted = np.where(grid == np.amax(grid))
+    return list(zip(max_value_unsorted[0], max_value_unsorted[1]))
+
+
+def calculate_item_type(box_grid: np.array, agent_grid: np.array, num_types: int) -> list:
+    agent_position = get_max_position(agent_grid)[0]
+    assert type(agent_position) is tuple
+    return denormalize_type(box_grid[agent_position], num_types)
+
+
+def get_agent_item_type(state: np.array, num_types: int) -> list:
+    box_grid = state[0]
+    agent_grid = state[2]
+    if np.amax(agent_grid) != 255:
+        return []
+    return [calculate_item_type(box_grid, agent_grid, num_types)]
+
+
+def drop_box(env: Storehouse, state: np.array, agent_item_type: list, ready_to_consume_types: list) -> np.array:
+    if any(item_type in ready_to_consume_types for item_type in agent_item_type if len(ready_to_consume_types)):
+        return deliver_box(env)
+    else:
+        return deposit_item_in_grid(env, state)
+
+
+def take_box(env: Storehouse, state: np.array, ready_to_consume_types: list, entrypoints_with_items: dict) -> np.array:
+    if len(ready_boxes := get_ready_boxes_in_grid(state, ready_to_consume_types, len(env.type_information))):
+        return take_item_from_grid(env, state, ready_boxes)
+    elif len(entrypoints_with_items):
+        return take_item_from_ep(env, list(entrypoints_with_items.keys()))
+    else:
+        return idle(env)
+
+
+def render_reset(env: Storehouse, state, info: dict) -> np.array:
+    render(env, info["comment"], info["action"], info["reward"], info["info"])
+    s = check_reset(env, info["done"])
+    state = state if s is None else s
+    sleep(SLEEP_TIME)
+    return state
+
+
 def ehp_only_state(env: Storehouse, state: np.array):
-    print(state)
     ready_to_consume_types = get_rtct_from_state(state, env.outpoints.outpoints[0], len(env.type_information))
     entrypoints_with_items = get_epwi_from_state(state, [ep.position for ep in env.entrypoints], len(env.type_information))
-    ep_with_direct_items = get_direct_items(entrypoints_with_items, ready_to_consume_types)
-    if len(ready_to_consume_types):
-        if len(ready_boxes := get_ready_boxes_in_grid(state, ready_to_consume_types, len(env.type_information))):
-            state = deliver_item_state(env, state, ready_boxes)
-        elif len(ep_with_direct_items):
-            state = deliver_from_ep_state(env, ep_with_direct_items)
-        elif len(entrypoints_with_items):
-            state = store_item_state(env, state, list(entrypoints_with_items.keys()))
-        else:
-            state = wait(env)
-    elif len(entrypoints_with_items):
-        state = store_item_state(env, state, list(entrypoints_with_items.keys()))
+    # ep_with_direct_items = get_direct_items(entrypoints_with_items, ready_to_consume_types)
+    agent_item_type = get_agent_item_type(state, len(env.type_information))
+    if len(agent_item_type):
+        state, info = drop_box(env, state, agent_item_type, ready_to_consume_types)
     else:
-        state = wait(env)
+        state, info = take_box(env, state, ready_to_consume_types, entrypoints_with_items)
+    state = render_reset(env, state, info)
     return state
 
 
