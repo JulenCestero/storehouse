@@ -1,10 +1,10 @@
 import operator
-from pathlib import Path
+from pickletools import read_unicodestring1
 from time import sleep
 
 import click
 import numpy as np
-from storehouse.environment.env_storehouse import CONF_NAME, MAX_MOVEMENTS, Storehouse
+from storehouse.environment.env_storehouse import Storehouse
 from tqdm import tqdm
 
 STEPS = 100000
@@ -113,12 +113,6 @@ def wait(env: Storehouse):
     s = check_reset(env, done)
     state = state if s is None else s
     return (state,)
-
-
-def idle(env: Storehouse):
-    action = (0, 1)
-    state, reward, done, info = env._step(action)
-    return state, {"action": action, "reward": reward, "info": info, "comment": "idle", "done": done}
 
 
 def initial_human_policy(env: Storehouse, state: np.array):
@@ -284,27 +278,27 @@ def check_reset(env, done) -> np.array:
     return None
 
 
-def take_item_from_grid(env, state, ready_boxes) -> np.array:
+def take_item_from_grid(state, ready_boxes) -> np.array:
     age_grid = state[1]
-    box_pos = get_oldest_box(age_grid, ready_boxes)
-    state, reward, done, info = env._step(box_pos)
-    return state, {"action": box_pos, "reward": reward, "info": info, "comment": "take item grid", "done": done}
+    return get_oldest_box(age_grid, ready_boxes)
 
 
-def deliver_box(env):
-    action = env.outpoints.outpoints[0]
-    state, reward, done, info = env._step(action)
-    return state, {"action": action, "reward": reward, "info": info, "comment": "deliver item", "done": done}
+def deliver_box(outpoint_position):
+    return outpoint_position
 
 
-def take_item_from_ep(env: Storehouse, ep: list) -> None:
-    da_box = ep[np.random.choice(len(ep))]
-    state, reward, done, info = env._step(da_box)
-    return state, {"action": da_box, "reward": reward, "info": info, "comment": "take item ep", "done": done}
+def take_item_from_ep(ep: list) -> None:
+    return ep[np.random.choice(len(ep))]
 
 
-def get_direct_items(ep_items: dict, wanted_items: list) -> list:
-    return [pos for pos, ep in ep_items.items() if len(wanted_items) and ep in wanted_items]
+def deposit_item_in_grid(state: np.array) -> np.array:
+    box_grid = state[0]
+    target_cell = find_target_cell(box_grid)
+    return None if target_cell is None else target_cell
+
+
+def idle():
+    return (0, 1)
 
 
 def find_target_cell(grid: np.array) -> tuple:
@@ -318,21 +312,6 @@ def find_target_cell(grid: np.array) -> tuple:
             continue
         break
     return target_cell
-
-
-def deposit_item_in_grid(env: Storehouse, state: np.array) -> np.array:
-    box_grid = state[0]
-    target_cell = find_target_cell(box_grid)
-    if target_cell is None:
-        done = True
-    else:
-        state, reward, done, info = env._step(target_cell)
-    return state, {"action": target_cell, "reward": reward, "info": info, "comment": "store item in grid", "done": done}
-
-
-def store_item_state(env: Storehouse, state: np.array, ep_items: list) -> np.array:
-    take_item_from_ep(env, ep_items)
-    return deposit_item_in_grid(env, state)
 
 
 def get_max_position(grid: np.array) -> list:
@@ -354,41 +333,58 @@ def get_agent_item_type(state: np.array, num_types: int) -> list:
     return [calculate_item_type(box_grid, agent_grid, num_types)]
 
 
-def drop_box(env: Storehouse, state: np.array, agent_item_type: list, ready_to_consume_types: list) -> np.array:
+def drop_box(
+    state: np.array,
+    agent_item_type: list,
+    ready_to_consume_types: list,
+    outpoint_position: tuple,
+    verbose=False,
+) -> np.array:
     if any(item_type in ready_to_consume_types for item_type in agent_item_type if len(ready_to_consume_types)):
-        return deliver_box(env)
+        return deliver_box(outpoint_position) if not verbose else (deliver_box(outpoint_position), "deliver box")
     else:
-        return deposit_item_in_grid(env, state)
+        return deposit_item_in_grid(state) if not verbose else (deposit_item_in_grid(state), "deposit item in grid")
 
 
-def take_box(env: Storehouse, state: np.array, ready_to_consume_types: list, entrypoints_with_items: dict) -> np.array:
-    if len(ready_boxes := get_ready_boxes_in_grid(state, ready_to_consume_types, len(env.type_information))):
-        return take_item_from_grid(env, state, ready_boxes)
+def take_box(
+    state: np.array, ready_to_consume_types: list, entrypoints_with_items: dict, num_types: int, verbose=False
+) -> np.array:
+    if len(ready_boxes := get_ready_boxes_in_grid(state, ready_to_consume_types, num_types)):
+        action = take_item_from_grid(state, ready_boxes)
+        return action if not verbose else (action, "take item from grid")
     elif len(entrypoints_with_items):
-        return take_item_from_ep(env, list(entrypoints_with_items.keys()))
+        action = take_item_from_ep(list(entrypoints_with_items.keys()))
+        return action if not verbose else (action, "take item from ep")
     else:
-        return idle(env)
+        return idle() if not verbose else (idle(), "idle")
 
 
-def render_reset(env: Storehouse, state, info: dict) -> np.array:
-    render(env, info["comment"], info["action"], info["reward"], info["info"])
-    s = check_reset(env, info["done"])
+def act(env: Storehouse, action: tuple, act_verbose: str = "") -> np.array:
+    if action is not None:
+        state, reward, done, info = env._step(action)
+    else:
+        done = True
+        reward = False
+    render(env, act_verbose, action, reward, done)
+    s = check_reset(env, done)
     state = state if s is None else s
     sleep(SLEEP_TIME)
     return state
 
 
-def ehp_only_state(env: Storehouse, state: np.array):
-    ready_to_consume_types = get_rtct_from_state(state, env.outpoints.outpoints[0], len(env.type_information))
-    entrypoints_with_items = get_epwi_from_state(state, [ep.position for ep in env.entrypoints], len(env.type_information))
-    # ep_with_direct_items = get_direct_items(entrypoints_with_items, ready_to_consume_types)
-    agent_item_type = get_agent_item_type(state, len(env.type_information))
+def ehp_only_state(env: Storehouse, state: np.array, verbose=False):
+    # Static information
+    outpoint_position = env.outpoints.outpoints[0]
+    num_types = len(env.type_information)
+    entrypoint_position = [ep.position for ep in env.entrypoints]
+    ####
+    ready_to_consume_types = get_rtct_from_state(state, outpoint_position, num_types)
+    entrypoints_with_items = get_epwi_from_state(state, entrypoint_position, num_types)
+    agent_item_type = get_agent_item_type(state, num_types)
     if len(agent_item_type):
-        state, info = drop_box(env, state, agent_item_type, ready_to_consume_types)
+        return drop_box(state, agent_item_type, ready_to_consume_types, outpoint_position, verbose)
     else:
-        state, info = take_box(env, state, ready_to_consume_types, entrypoints_with_items)
-    state = render_reset(env, state, info)
-    return state
+        return take_box(state, ready_to_consume_types, entrypoints_with_items, num_types, verbose)
 
 
 @click.command()
@@ -423,18 +419,13 @@ def main(log_folder, policy, conf_name, max_steps, render, timesteps, save_episo
         elif policy == "ihp":
             initial_human_policy(env, s)
         elif policy == "ehp_state":
-            s = ehp_only_state(env, s)
+            action, info_verbose = ehp_only_state(env, s, verbose=True)
+            s = act(env, action, info_verbose)
         else:
             raise NotImplementedError
         if not VISUAL:
             pbar.update(1)
     print(f"Finish! Results saved in {log_folder}")
-    # s, r, done, info = env.step(action)
-    # env.render()
-    # print(f'Action: {action}, Reward: {r}, info: {info}')
-    # sleep(0.3)
-    # if done:
-    #     s = env.reset()
 
 
 if __name__ == "__main__":
