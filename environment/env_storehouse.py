@@ -19,7 +19,7 @@ FEATURE_NUMBER = 7
 MAX_INVALID = 10
 MAX_MOVEMENTS = 1000  # 50
 MIN_CNN_LEN = 32
-AUGMENT_FACTOR = 10
+AUGMENT_FACTOR = 6
 EPISODE = 0
 
 
@@ -762,6 +762,7 @@ class Storehouse(gym.Env):
             if self.log_flag:
                 self.log(action)
             self.last_r = reward
+            self.current_return += reward
             info["delivered"] = self.score.delivered_boxes
             self.last_info = info
             return self.get_state(), reward, self.done, info
@@ -794,6 +795,7 @@ class Storehouse(gym.Env):
             info["Info"] = "Done. Please reset the environment"
             reward = -1e3
             self.last_r = reward
+            self.current_return += reward
             info["delivered"] = self.score.delivered_boxes
             self.last_info = info
             return self.get_state(), reward, self.done, info
@@ -816,6 +818,7 @@ class Storehouse(gym.Env):
         if render:
             self.render()
         self.last_r = reward
+        self.current_return += reward
         info["delivered"] = self.score.delivered_boxes
         self.last_info = info
         return self.get_state(), reward, self.done, info
@@ -834,6 +837,7 @@ class Storehouse(gym.Env):
         state, reward, done, info = self._step(self.action)
         info["delivered"] = self.score.delivered_boxes
         self.last_r = reward
+        self.current_return += reward
         self.last_info = info
         return state, reward, done, info
 
@@ -874,7 +878,7 @@ class Storehouse(gym.Env):
         self.episode = []
         self.grid = np.zeros(self.grid.shape)
         self.num_actions = 0
-
+        self.current_return = 0
         self.material = {}
         self.outpoints.reset()
         for entrypoint in self.entrypoints:
