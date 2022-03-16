@@ -373,6 +373,13 @@ def act(env: Storehouse, action: tuple, act_verbose: str = "") -> np.array:
 
 
 def ehp_only_state(env: Storehouse, state: np.array, verbose=False):
+    """
+    EHP, fixed as a policy, usage:
+        - To use for simulating the optimal policy, use the act function to move the
+          agent and get newer states, and set as True the verbose flag
+        - To use as a regular policy, just use it as a = p(env, s). The env variable
+          is necessary to get some static info from the environment (positions mostly)
+    """
     # Static information
     outpoint_position = env.outpoints.outpoints[0]
     num_types = len(env.type_information)
@@ -388,7 +395,7 @@ def ehp_only_state(env: Storehouse, state: np.array, verbose=False):
 
 
 @click.command()
-@click.option("-l", "--log_folder", default="log/log")
+@click.option("-l", "--log_folder", default=None)
 @click.option("-p", "--policy", default="ehp")
 @click.option("-c", "--conf_name", default="6x6fast")
 @click.option("-m", "--max_steps", default=50)
@@ -419,8 +426,8 @@ def main(log_folder, policy, conf_name, max_steps, render, timesteps, save_episo
         elif policy == "ihp":
             initial_human_policy(env, s)
         elif policy == "ehp_state":
-            action, info_verbose = ehp_only_state(env, s, verbose=True)
-            s = act(env, action, info_verbose)
+            action, act_info = ehp_only_state(env, s, verbose=True)
+            s = act(env, action, act_info)
         else:
             raise NotImplementedError
         if not VISUAL:
