@@ -66,28 +66,23 @@
       "material_types": {
         "A": {
           "create": {
-            "mean": 5,
-            "std": 1
+            "lambda": 2
           },
           "deliver": {
-            "mean": 20,
-            "std": 5
+            "lambda": 15
           }
         },
         "B": {
           "create": {
-            "mean": 8,
-            "std": 3
+             "lambda": 4
           },
           "deliver": {
-            "mean": 30,
-            "std": 9
+             "lambda": 20
           }
         }
       },
       "delivery_timer": {
-        "mean": 50,
-        "std": 10
+         "lambda": 20
       }
     }
   },
