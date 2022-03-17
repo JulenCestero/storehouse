@@ -4,7 +4,7 @@ import logging
 import operator
 import os
 import random
-from math import prod
+from math import ceil, prod
 from pathlib import Path
 from statistics import mean
 
@@ -23,7 +23,7 @@ FEATURE_NUMBER = 3
 MAX_INVALID = 10
 MAX_MOVEMENTS = 1000  # 50
 MIN_CNN_LEN = 32
-AUGMENT_FACTOR = 6
+MIN_SB3_SIZE = 32
 EPISODE = 0
 
 
@@ -197,6 +197,7 @@ class Storehouse(gym.Env):
         self.load_conf(conf_name)
         if augment is not None:
             self.augmented = augment
+            self.augment_factor = ceil(MIN_SB3_SIZE / min(self.grid.shape))
         self.random_start = random_start
         self.path_cost = path_cost
         self.normalized_state = normalized_state
@@ -209,7 +210,7 @@ class Storehouse(gym.Env):
         self.transpose_state = transpose_state
         self.finder = AStarFinder(diagonal_movement=DiagonalMovement.never) if self.path_cost else None
         if self.augmented:
-            size = tuple(dimension * AUGMENT_FACTOR for dimension in self.grid.shape)
+            size = tuple(dimension * self.augment_factor for dimension in self.grid.shape)
         else:
             size = self.grid.shape
         self.action_space = gym.spaces.Discrete(self.grid.shape[0] * self.grid.shape[1])
@@ -622,10 +623,12 @@ class Storehouse(gym.Env):
             }
         )
 
-    @staticmethod
-    def augment_state(box_grid, age_grid, agent_grid) -> np.array:
+    def augment_state(self, box_grid, age_grid, agent_grid) -> np.array:
         return np.array(
-            [np.kron(grid, np.ones((AUGMENT_FACTOR, AUGMENT_FACTOR))) for grid in np.array([box_grid, age_grid, agent_grid])]
+            [
+                np.kron(grid, np.ones((self.augment_factor, self.augment_factor)))
+                for grid in np.array([box_grid, age_grid, agent_grid])
+            ]
         )
 
     def mix_state(self, box_grid, age_grid, agent_grid):
@@ -737,10 +740,10 @@ class Storehouse(gym.Env):
             )
 
         if self.augmented:
-            size = tuple(dimension * AUGMENT_FACTOR for dimension in self.grid.shape)
+            size = tuple(dimension * self.augment_factor for dimension in self.grid.shape)
             state_mix = np.array(
                 [
-                    np.kron(grid, np.ones((AUGMENT_FACTOR, AUGMENT_FACTOR)))
+                    np.kron(grid, np.ones((self.augment_factor, self.augment_factor)))
                     for grid in np.array(
                         [
                             box_grid,
