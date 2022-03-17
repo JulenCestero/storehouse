@@ -4,7 +4,7 @@ import logging
 import operator
 import os
 import random
-from math import ceil, prod
+from math import ceil
 from pathlib import Path
 from statistics import mean
 
@@ -392,7 +392,7 @@ class Storehouse(gym.Env):
 
     @staticmethod
     def normalize_path_cost(cost: int, grid_shape: tuple) -> float:
-        return -cost / prod(grid_shape)
+        return -cost / np.prod(grid_shape)
 
     def get_reward(
         self, move_status: int, ag: Agent, box: Box = None, start_cell: tuple = None, end_cell: tuple = None
