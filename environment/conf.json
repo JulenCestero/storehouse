@@ -74,15 +74,15 @@
         },
         "B": {
           "create": {
-             "lambda": 4
+            "lambda": 4
           },
           "deliver": {
-             "lambda": 20
+            "lambda": 20
           }
         }
       },
       "delivery_timer": {
-         "lambda": 20
+        "lambda": 20
       }
     }
   },
@@ -125,6 +125,35 @@
     "conf": {
       "entrypoints": ["(0,0)", "(0,35)"],
       "outpoints": ["(35,0)", "(35,35)"],
+      "num_agents": 1,
+      "material_types": {
+        "A": {
+          "create": {
+            "lambda": 1
+          },
+          "deliver": {
+            "lambda": 30
+          }
+        },
+        "B": {
+          "create": {
+            "lambda": 2
+          },
+          "deliver": {
+            "lambda": 50
+          }
+        }
+      },
+      "delivery_timer": {
+        "lambda": 10
+      }
+    }
+  },
+  "15x15": {
+    "grid": [15, 15],
+    "conf": {
+      "entrypoints": ["(0,0)", "(0,14)"],
+      "outpoints": ["(14,0)", "(14,14)"],
       "num_agents": 1,
       "material_types": {
         "A": {
