@@ -1,5 +1,4 @@
 import operator
-from pickletools import read_unicodestring1
 from time import sleep
 
 import click
@@ -359,17 +358,17 @@ def take_box(
         return idle() if not verbose else (idle(), "idle")
 
 
-def act(env: Storehouse, action: tuple, act_verbose: str = "") -> np.array:
+def act(env: Storehouse, action: tuple, act_verbose: str = "") -> tuple:
     if action is not None:
         state, reward, done, info = env._step(action)
     else:
         done = True
-        reward = False
-    render(env, act_verbose, action, reward, done)
+        reward = 0
+    render(env, act_verbose, action, reward, info)
     s = check_reset(env, done)
     state = state if s is None else s
     sleep(SLEEP_TIME)
-    return state
+    return state, reward
 
 
 def ehp_only_state(env: Storehouse, state: np.array, verbose=False):
@@ -402,7 +401,8 @@ def ehp_only_state(env: Storehouse, state: np.array, verbose=False):
 @click.option("-r", "--render", default=0)
 @click.option("-t", "--timesteps", default=STEPS)
 @click.option("-s", "--save_episodes", default=False)
-def main(log_folder, policy, conf_name, max_steps, render, timesteps, save_episodes):
+@click.option("-pc", "--path_cost", default=False)
+def main(log_folder, policy, conf_name, max_steps, render, timesteps, save_episodes, path_cost):
     global VISUAL
     global SLEEP_TIME
     VISUAL = int(render)
@@ -415,9 +415,11 @@ def main(log_folder, policy, conf_name, max_steps, render, timesteps, save_episo
         max_steps=int(max_steps),
         augment=False,
         transpose_state=True,
+        path_cost=path_cost,
     )
 
     s = env.reset(VISUAL)
+    cum_reward = 0
     if not VISUAL:
         pbar = tqdm(total=timesteps)
     for _ in range(timesteps):
@@ -427,12 +429,13 @@ def main(log_folder, policy, conf_name, max_steps, render, timesteps, save_episo
             initial_human_policy(env, s)
         elif policy == "ehp_state":
             action, act_info = ehp_only_state(env, s, verbose=True)
-            s = act(env, action, act_info)
+            s, r = act(env, action, act_info)
+            cum_reward += r
         else:
             raise NotImplementedError
         if not VISUAL:
             pbar.update(1)
-    print(f"Finish! Results saved in {log_folder}")
+    print(f"Finish! Results saved in {log_folder}.\nMean score: {cum_reward / timesteps}")
 
 
 if __name__ == "__main__":

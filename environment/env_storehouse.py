@@ -4,12 +4,16 @@ import logging
 import operator
 import os
 import random
+from math import prod
 from pathlib import Path
 from statistics import mean
 
 import gym
 import numpy as np
 from colorama import Back, Fore, Style
+from pathfinding.core.diagonal_movement import DiagonalMovement
+from pathfinding.core.grid import Grid
+from pathfinding.finder.a_star import AStarFinder
 
 CONF_NAME = "6x6"
 MAX_ORDERS = 3
@@ -183,6 +187,7 @@ class Storehouse(gym.Env):
         augment: bool = None,
         random_start: bool = False,
         normalized_state: bool = False,
+        path_cost: bool = False,
     ):
         self.signature = {}
         self.max_id = 1
@@ -193,6 +198,7 @@ class Storehouse(gym.Env):
         if augment is not None:
             self.augmented = augment
         self.random_start = random_start
+        self.path_cost = path_cost
         self.normalized_state = normalized_state
         self.feature_number = FEATURE_NUMBER
         self.score = Score()
@@ -201,6 +207,7 @@ class Storehouse(gym.Env):
         self.logname = Path(logname)
         self.save_episodes = save_episodes
         self.transpose_state = transpose_state
+        self.finder = AStarFinder(diagonal_movement=DiagonalMovement.never) if self.path_cost else None
         if self.augmented:
             size = tuple(dimension * AUGMENT_FACTOR for dimension in self.grid.shape)
         else:
@@ -276,6 +283,20 @@ class Storehouse(gym.Env):
                     logging.error(f"Unexpected error at consuming the material at outpoint {outpoint}: {e}")
                     raise Exception from e
 
+    @staticmethod
+    def prepare_grid(matrix: np.array) -> Grid:
+        return Grid(matrix=np.negative(matrix) + 1)
+
+    def find_path_cost(self, start_position, end_position) -> int:
+        """
+        Returns the cost of the movement. 0 if end_position is unreachable
+        """
+        grid = self.prepare_grid(self.grid)
+        start = grid.node(*start_position)
+        end = grid.node(*end_position)
+        path, runs = self.finder.find_path(start, end, grid)
+        return len(path)
+
     def calculate_restricted_cells(self):
         """
         Initial estimation of the restricted_cells list, where the agent is forbidden to navigate
@@ -345,10 +366,8 @@ class Storehouse(gym.Env):
             entrypoints_with_items = []
         return entrypoints_with_items
 
-    def get_reward(self, move_status: int, ag: Agent, box: Box = None) -> int:
-        if move_status == 0:  # invalid action
-            return -1
-        elif any(True for element in self.outpoints.delivery_schedule if element["timer"] < 1):
+    def get_macro_action_reward(self, ag: Agent, box: Box = None) -> float:
+        if any(True for element in self.outpoints.delivery_schedule if element["timer"] < 1):
             if ag.position in self.outpoints.outpoints:
                 return self.delivery_reward(box)
             entrypoints_with_items = self.get_entrypoints_with_items()
@@ -366,6 +385,22 @@ class Storehouse(gym.Env):
             return 0
         else:
             return 0
+
+    @staticmethod
+    def normalize_path_cost(cost: int, grid_shape: tuple) -> float:
+        return -cost / prod(grid_shape)
+
+    def get_reward(
+        self, move_status: int, ag: Agent, box: Box = None, start_cell: tuple = None, end_cell: tuple = None
+    ) -> float:
+        if move_status == 0:
+            return -1
+        macro_action_reward = self.get_macro_action_reward(ag, box)
+        weighted_reward = macro_action_reward
+        if self.path_cost:
+            micro_action_reward = self.normalize_path_cost(self.find_path_cost(start_cell, end_cell), self.grid.shape)
+            weighted_reward = 0.5 * macro_action_reward + 0.5 * micro_action_reward if micro_action_reward != 0 else -1
+        return weighted_reward
 
     def delivery_reward(self, box):
         min_rew = -0.5
@@ -854,6 +889,7 @@ class Storehouse(gym.Env):
         # Update environment with the agent interaction
         if not self.done:
             # Movement
+            start_cell = agent.position
             move_status = self.move_agent(agent, action)
             if move_status in (1, 2):  # If interacted with a Box
                 if move_status == 1 and agent.position in [
@@ -868,7 +904,7 @@ class Storehouse(gym.Env):
                 info["Info"] = f"Box {box.id} moved"
             else:
                 box = None
-            reward = self.get_reward(move_status, agent, box)
+            reward = self.get_reward(move_status, agent, box, start_cell, action)
             self.score.clear_run_score += reward
         else:
             info["Info"] = "Done. Please reset the environment"
