@@ -7,6 +7,7 @@ import random
 from math import ceil, prod
 from pathlib import Path
 from statistics import mean
+from time import time
 
 import gym
 import numpy as np
@@ -25,6 +26,7 @@ MAX_MOVEMENTS = 1000  # 50
 MIN_CNN_LEN = 32
 MIN_SB3_SIZE = 32
 EPISODE = 0
+NUM_RANDOM_STATES = 500
 
 
 class Score:
@@ -224,6 +226,8 @@ class Storehouse(gym.Env):
         self.num_invalid = 0
         self.cum_reward = 0
         self.action_mask = np.zeros(len(list(range(self.action_space.n))))
+        if self.random_start:
+            self.random_initial_states = self.create_random_initial_states(NUM_RANDOM_STATES)
         if save_episodes:
             self.episode_folder = self.logname / "episodes"
             self.episode_folder.mkdir(parents=True, exist_ok=True)
@@ -403,9 +407,6 @@ class Storehouse(gym.Env):
         weighted_reward = macro_action_reward
         if self.path_cost:
             micro_action_reward = self.normalize_path_cost(self.find_path_cost(start_cell, end_cell), self.grid.shape)
-            if micro_action_reward > 0:
-                prueba = 100
-                print(prueba)
             weighted_reward = 0.5 * macro_action_reward + 0.5 * micro_action_reward if micro_action_reward <= 0 else -1
         # assert weighted_reward <= 0
         return weighted_reward
@@ -539,7 +540,7 @@ class Storehouse(gym.Env):
         return free_storage + outer_ring
 
     def set_signature(self, signature: dict) -> None:
-        self.reset()
+        self.reset(force_clean=True)
         self.done = signature["done"]
         self.agents = copy.deepcopy(signature["agents_raw"])
         self.material = copy.deepcopy(signature["material_raw"])
@@ -554,12 +555,12 @@ class Storehouse(gym.Env):
             # ep.material_queue = [{"timer": item["timer"], "type": item["material"].type} for item in
             #           copy.deepcopy(info["queue"])]
         self.num_actions = signature["num_actions"]
-        for box in list(self.material.values()) + [
-            queue[0]["material"]
+        for box_id, box in list(self.material.items()) + [
+            (queue[0]["material"].id, queue[0]["material"])
             for queue in [ep.material_queue for ep in self.entrypoints if len(ep.material_queue) > 0]
             if queue[0]["timer"] == 0
         ]:
-            self.grid[box.position] = box.id
+            self.grid[box.position] = box_id
         if self.agents[0].got_item:
             self.grid[self.agents[0].position] = 0
         self.max_id = signature["max_id"]
@@ -571,12 +572,12 @@ class Storehouse(gym.Env):
             "done": self.done,
             "boxes": [
                 {
-                    "id": box.id,
+                    "id": id_box,
                     "pos": box.position,
                     "age": box.age,
                     "type": box.type,
                 }
-                for box in self.material.values()
+                for id_box, box in self.material.items()
             ],
         }
 
@@ -993,7 +994,17 @@ class Storehouse(gym.Env):
                 timer = round(np.random.poisson(10))  # Magic number
                 self.outpoints.delivery_schedule.append({"type": type, "timer": timer, "num_boxes": num_boxes})
 
-    def reset(self, render=False) -> list:
+    def create_random_initial_states(self, num_states) -> list:
+        states = []
+        print("Creating random states...")
+        t0 = time()
+        for _ in range(num_states):
+            self.reset_random()
+            states.append(self.get_signature())
+        print(f"Finished! Created {num_states} states in {time() - t0}s")
+        return states
+
+    def reset(self, render=False, force_clean=False) -> list:
         global EPISODE
         EPISODE += 1
         random_flag = self.random_start
@@ -1008,8 +1019,8 @@ class Storehouse(gym.Env):
         for entrypoint in self.entrypoints:
             entrypoint.reset()
 
-        if random_flag:
-            self.reset_random()
+        if random_flag and not force_clean:
+            self.set_signature(np.random.choice(self.random_initial_states))
         else:
             self.agents = [Agent(initial_position=(3, 3)) for _ in range(self.num_agents)]
 
@@ -1026,7 +1037,8 @@ class Storehouse(gym.Env):
         return self.get_state()
 
     def reset_random(self):
-        box_probability = 0.40  # Magic number
+        self.reset(force_clean=True)
+        box_probability = 0.4  # Magic number
         self.agents = [
             Agent(
                 (random.choice(range(1, self.grid.shape[0] - 1)), random.choice(range(1, self.grid.shape[1] - 1))),
