@@ -32,7 +32,8 @@ def random_agent(env=Storehouse(), timesteps: int = STEPS, render=True):
 @click.option("-m", "--max_steps", default=50)
 @click.option("-r", "--render", default=0)
 @click.option("-pc", "--path_cost", default=False)
-def main(log_folder, conf_name, max_steps, render, path_cost):
+@click.option("-t", "--timesteps", default=STEPS)
+def main(log_folder, conf_name, max_steps, render, path_cost, timesteps):
     env = Storehouse(
         "log/log" if not log_folder else log_folder,
         logging=bool(log_folder),
@@ -43,7 +44,7 @@ def main(log_folder, conf_name, max_steps, render, path_cost):
         augment=False,
     )
 
-    mean_reward = random_agent(env, timesteps=STEPS, render=render)
+    mean_reward = random_agent(env, timesteps=timesteps, render=render)
     print(f"Results saved in {log_folder}. Mean reward: {mean_reward}")
 
 
