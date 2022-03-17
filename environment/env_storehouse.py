@@ -197,7 +197,6 @@ class Storehouse(gym.Env):
         self.load_conf(conf_name)
         if augment is not None:
             self.augmented = augment
-            self.augment_factor = ceil(MIN_SB3_SIZE / min(self.grid.shape))
         self.random_start = random_start
         self.path_cost = path_cost
         self.normalized_state = normalized_state
@@ -210,6 +209,7 @@ class Storehouse(gym.Env):
         self.transpose_state = transpose_state
         self.finder = AStarFinder(diagonal_movement=DiagonalMovement.never) if self.path_cost else None
         if self.augmented:
+            self.augment_factor = ceil(MIN_SB3_SIZE / min(self.grid.shape))
             size = tuple(dimension * self.augment_factor for dimension in self.grid.shape)
         else:
             size = self.grid.shape
@@ -285,18 +285,21 @@ class Storehouse(gym.Env):
                     raise Exception from e
 
     @staticmethod
-    def prepare_grid(matrix: np.array) -> Grid:
-        return Grid(matrix=np.negative(matrix) + 1)
+    def prepare_grid(matrix: np.array, start: tuple, end: tuple) -> Grid:
+        prepared_matrix = copy.deepcopy(matrix)
+        prepared_matrix[start] = 0
+        prepared_matrix[end] = 0
+        return Grid(matrix=np.negative(prepared_matrix) + 1)
 
     def find_path_cost(self, start_position, end_position) -> int:
         """
         Returns the cost of the movement. 0 if end_position is unreachable
         """
-        grid = self.prepare_grid(self.grid)
-        start = grid.node(*start_position)
-        end = grid.node(*end_position)
+        grid = self.prepare_grid(self.grid, start_position, end_position)
+        start = grid.node(*reversed(start_position))
+        end = grid.node(*reversed(end_position))
         path, runs = self.finder.find_path(start, end, grid)
-        return len(path)
+        return len(path) - 1  # If agent is idle, it counts as a movement of 1, we want 0
 
     def calculate_restricted_cells(self):
         """
@@ -400,7 +403,11 @@ class Storehouse(gym.Env):
         weighted_reward = macro_action_reward
         if self.path_cost:
             micro_action_reward = self.normalize_path_cost(self.find_path_cost(start_cell, end_cell), self.grid.shape)
-            weighted_reward = 0.5 * macro_action_reward + 0.5 * micro_action_reward if micro_action_reward != 0 else -1
+            if micro_action_reward > 0:
+                prueba = 100
+                print(prueba)
+            weighted_reward = 0.5 * macro_action_reward + 0.5 * micro_action_reward if micro_action_reward <= 0 else -1
+        # assert weighted_reward <= 0
         return weighted_reward
 
     def delivery_reward(self, box):
