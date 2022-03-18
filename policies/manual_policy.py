@@ -398,15 +398,16 @@ def ehp_only_state(env: Storehouse, state: np.array, verbose=False):
 @click.option("-p", "--policy", default="ehp")
 @click.option("-c", "--conf_name", default="6x6fast")
 @click.option("-m", "--max_steps", default=50)
-@click.option("-r", "--render", default=0)
+@click.option("-v", "--visualize", default=0)
 @click.option("-t", "--timesteps", default=STEPS)
 @click.option("-s", "--save_episodes", default=False)
 @click.option("-pc", "--path_cost", default=False)
-def main(log_folder, policy, conf_name, max_steps, render, timesteps, save_episodes, path_cost):
+@click.option("-r", "--random_Start", default=False)
+def main(log_folder, policy, conf_name, max_steps, visualize, timesteps, save_episodes, path_cost, random_start):
     global VISUAL
     global SLEEP_TIME
-    VISUAL = int(render)
-    SLEEP_TIME = 0.2 if render else 0.00
+    VISUAL = int(visualize)
+    SLEEP_TIME = 0.2 if visualize else 0.00
     env = Storehouse(
         "log/log" if not log_folder else log_folder,
         logging=bool(log_folder),
@@ -415,7 +416,8 @@ def main(log_folder, policy, conf_name, max_steps, render, timesteps, save_episo
         max_steps=int(max_steps),
         augment=False,
         transpose_state=True,
-        path_cost=path_cost,
+        path_cost=int(path_cost),
+        random_start=int(random_start),
     )
 
     s = env.reset(VISUAL)
