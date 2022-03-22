@@ -57,8 +57,8 @@ class Box:
         self.age = age
         self.position = position
 
-    def update_age(self):
-        self.age += 1
+    def update_age(self, num_steps: int):
+        self.age += num_steps
 
     def __eq__(self, other):
         if isinstance(other, Box):
@@ -159,8 +159,8 @@ class Outpoints:
             return None
         if len([order["timer"] for order in self.delivery_schedule if order["timer"] == 0]) > self.max_orders:
             return None
-        type = random.choice(list(self.type_information.keys()))
-        order = self.create_order(type)
+        box_type = random.choice(list(self.type_information.keys()))
+        order = self.create_order(box_type)
         self.delivery_schedule.append(order)
         self.last_delivery_timers = 0
         return {key: item for key, item in order.items() if key != "timer"}
@@ -222,6 +222,7 @@ class Storehouse(gym.Env):
         self.agents = [Agent((0, 0)) for _ in range(self.num_agents)]
         self.done = False
         self.action = None
+        self.path = []
         self.num_actions = 0
         self.num_invalid = 0
         self.cum_reward = 0
@@ -303,6 +304,7 @@ class Storehouse(gym.Env):
         start = grid.node(*reversed(start_position))
         end = grid.node(*reversed(end_position))
         path, runs = self.finder.find_path(start, end, grid)
+        self.path = path
         return len(path) - 1  # If agent is idle, it counts as a movement of 1, we want 0
 
     def calculate_restricted_cells(self):
@@ -396,7 +398,7 @@ class Storehouse(gym.Env):
 
     @staticmethod
     def normalize_path_cost(cost: int, grid_shape: tuple) -> float:
-        return -cost / prod(grid_shape)
+        return -cost / (prod(grid_shape) / 2)
 
     def get_reward(
         self, move_status: int, ag: Agent, box: Box = None, start_cell: tuple = None, end_cell: tuple = None
@@ -407,7 +409,7 @@ class Storehouse(gym.Env):
         weighted_reward = macro_action_reward
         if self.path_cost:
             micro_action_reward = self.normalize_path_cost(self.find_path_cost(start_cell, end_cell), self.grid.shape)
-            weighted_reward = 0.5 * macro_action_reward + 0.5 * micro_action_reward if micro_action_reward <= 0 else -1
+            weighted_reward = 0.2 * macro_action_reward + 0.8 * micro_action_reward if micro_action_reward <= 0 else -1
         # assert weighted_reward <= 0
         return weighted_reward
 
@@ -619,6 +621,7 @@ class Storehouse(gym.Env):
                 "step": action,
                 "reward": reward,
                 "cum_reward": self.cum_reward,
+                "path": self.path,
                 "state": {
                     key: value
                     if key not in ["entrypoints", "outpoints"]
@@ -928,7 +931,7 @@ class Storehouse(gym.Env):
         # Update environment unrelated to agent interaction
         self.outpoints_consume()
         for box in self.material.values():
-            box.update_age()
+            box.update_age(len(self.path) - 1)
         order = self.outpoints.create_delivery()
         if order is not None:
             self.max_id = random.choice(self.entrypoints).create_new_order(
