@@ -10,19 +10,19 @@ STEPS = 100000
 log_folder = Path("log")
 
 
-def random_agent(env=Storehouse(), timesteps: int = STEPS, render=True):
-    env.reset(render)
+def random_agent(env=Storehouse(), timesteps: int = STEPS, visualize=True):
+    env.reset(visualize)
     cum_reward = 0
     for _ in tqdm(range(timesteps)):
         action = env.action_space.sample()
         s, r, done, info = env.step(action)
         cum_reward += r
-        if render:
+        if visualize:
             env.render()
             print(f"Action: {action}\nReward: {r}\n{info}")
             sleep(SLEEP_TIME)
         if done:
-            s = env.reset(render)
+            s = env.reset(visualize)
     return cum_reward / timesteps
 
 
@@ -30,10 +30,11 @@ def random_agent(env=Storehouse(), timesteps: int = STEPS, render=True):
 @click.option("-l", "--log_folder", default="log/log")
 @click.option("-c", "--conf_name", default="6x6fast")
 @click.option("-m", "--max_steps", default=50)
-@click.option("-r", "--render", default=0)
+@click.option("-v", "--visualize", default=0)
+@click.option("-r", "--random_start", default=0)
 @click.option("-pc", "--path_cost", default=False)
 @click.option("-t", "--timesteps", default=STEPS)
-def main(log_folder, conf_name, max_steps, render, path_cost, timesteps):
+def main(log_folder, conf_name, max_steps, visualize, path_cost, timesteps, random_start):
     env = Storehouse(
         "log/log" if not log_folder else log_folder,
         logging=bool(log_folder),
@@ -42,9 +43,10 @@ def main(log_folder, conf_name, max_steps, render, path_cost, timesteps):
         max_steps=int(max_steps),
         path_cost=path_cost,
         augment=False,
+        random_start=random_start,
     )
 
-    mean_reward = random_agent(env, timesteps=timesteps, render=render)
+    mean_reward = random_agent(env, timesteps=timesteps, visualize=visualize)
     print(f"Results saved in {log_folder}. Mean reward: {mean_reward}")
 
 
