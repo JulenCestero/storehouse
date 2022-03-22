@@ -1,4 +1,5 @@
 import copy
+import itertools
 import json
 import logging
 import operator
@@ -440,7 +441,7 @@ class Storehouse(gym.Env):
 
     @staticmethod
     def normalize_age(age: int) -> float:
-        return min(max(age, 0), 1000) / 1000 * 255
+        return min(max(age, 0), 100) / 100 * 255
 
     def normalize_type(self, type: str) -> float:
         return (ord(type) - (ord("A") - 1)) * 255 / len(self.type_information)
@@ -1045,19 +1046,18 @@ class Storehouse(gym.Env):
         self.agents = [
             Agent(
                 (random.choice(range(1, self.grid.shape[0] - 1)), random.choice(range(1, self.grid.shape[1] - 1))),
-                got_item=random.choice([0, 1]),  # If the agent has an item, it will be of ID = 1
+                got_item=random.choice([0, self.max_id]),  # If the agent has an item, it will be of ID = 1
             )
             for _ in range(self.num_agents)
         ]
         if self.agents[0].got_item:  # Initialize random box
             self.material[self.agents[0].got_item] = self.create_random_box(position=self.agents[0].position)
-        for row in range(1, self.grid.shape[0] - 1):  # Populate the grid of boxes
-            for col in range(1, self.grid.shape[1] - 1):
-                if (row, col) == self.agents[0].position:
-                    continue
-                if random.random() < box_probability:
-                    max_id = self.max_id
-                    self.material[max_id] = self.create_random_box((row, col))
+        for row, col in itertools.product(range(1, self.grid.shape[0] - 1), range(1, self.grid.shape[1] - 1)):
+            if (row, col) == self.agents[0].position:
+                continue
+            if random.random() < box_probability:
+                max_id = self.max_id
+                self.material[max_id] = self.create_random_box((row, col))
         for box in list(self.material.values()):  # Introduce these boxes in the grid object
             self.grid[box.position] = box.id
         if self.agents[0].got_item:  # Clean grid
@@ -1069,7 +1069,7 @@ class Storehouse(gym.Env):
         """
         Encodes the grid from numbers to letters
         """
-        return " " if num == 0 else str(chr(int(ord("A") - 1 + num)))
+        return " " if num == 0 else chr(int(ord("A") - 1 + num))
         # return str(num)
 
     @staticmethod
