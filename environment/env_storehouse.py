@@ -134,12 +134,12 @@ class Outpoints:
         self.max_num_boxes = MAX_NUM_BOXES
         self.min_num_boxes = MIN_NUM_BOXES
         self.delivery_schedule = []  # Form: [{type, timer until ready, num_boxes}]
-        self.desired_material = 0
+        self.desired_material = ""
         self.last_delivery_timers = np.Inf
 
     def reset(self):
         self.delivery_schedule = []
-        self.desired_material = 0
+        self.desired_material = ""
         self.last_delivery_timers = np.Inf
 
     def update_timers(self, steps):
@@ -150,9 +150,9 @@ class Outpoints:
             if self.delivery_schedule[0]["timer"] == 0:
                 self.desired_material = self.delivery_schedule[0]["type"]
             else:
-                self.desired_material = 0
+                self.desired_material = ""
         else:
-            self.desired_material = 0
+            self.desired_material = ""
 
     def create_order(self, type: str) -> dict:
         timer = round(np.random.poisson(self.type_information[type]["deliver"]["lambda"]))
@@ -609,16 +609,16 @@ class Storehouse(gym.Env):
     def set_signature(self, signature: dict) -> None:
         self.reset(force_clean=True)
         self.done = signature["done"]
-        self.agents = copy.deepcopy(signature["agents_raw"])
-        self.material = copy.deepcopy(signature["material_raw"])
+        self.agents = [Agent(agent["pos"], agent["item_id"]) for agent in signature["agents"]]
+        self.material = {box["id"]: Box(box["id"], box["pos"], box["type"], box["age"]) for box in signature["boxes"]}
         self.calculate_restricted_cells()
-        self.outpoints.delivery_schedule = copy.deepcopy(signature["outpoints"]["delivery_schedule"])
-        self.outpoints.desired_material = copy.deepcopy(signature["outpoints"]["desired_material"])
-        self.outpoints.last_delivery_timers = copy.deepcopy(signature["outpoints"]["last_delivery_timers"])
+        self.outpoints.delivery_schedule = [el.copy() for el in signature["outpoints"]["delivery_schedule"]]
+        self.outpoints.desired_material = signature["outpoints"]["desired_material"]
+        self.outpoints.last_delivery_timers = signature["outpoints"]["last_delivery_timers"]
         for ep, info in zip(self.entrypoints, signature["entrypoints"]):
             ep.material_queue = copy.deepcopy(info["material_queue_raw"])
             ep.wait_time_cumulate = copy.deepcopy(info["wait_time_cumulate"])
-            ep.position = copy.deepcopy(info["pos"])
+            ep.position = info["pos"]
             # ep.material_queue = [{"timer": item["timer"], "type": item["material"].type} for item in
             #           copy.deepcopy(info["queue"])]
         self.num_actions = signature["num_actions"]
@@ -647,9 +647,8 @@ class Storehouse(gym.Env):
                 for id_box, box in self.material.items()
             ],
         }
-
         state["restricted_cell"] = list(self.restricted_cells)
-        agents = copy.deepcopy(self.agents)
+        agents = list(self.agents)
         state["agents"] = [
             {
                 "pos": agent.position,
@@ -658,11 +657,11 @@ class Storehouse(gym.Env):
             }
             for agent in agents
         ]
-        state["agents_raw"] = agents
-        state["material_raw"] = copy.deepcopy(self.material)
+        # state["agents_raw"] = agents
+        # state["material_raw"] = copy.deepcopy(self.material)
         state["entrypoints"] = [
             {
-                "pos": copy.deepcopy(ep.position),
+                "pos": ep.position,
                 "material_queue_raw": copy.deepcopy(ep.material_queue),
                 "wait_time_cumulate": copy.deepcopy(ep.wait_time_cumulate),
             }
@@ -670,11 +669,11 @@ class Storehouse(gym.Env):
         ]
         ready_to_consume_types = self.get_ready_to_consume_types()
         state["outpoints"] = {
-            "pos": copy.deepcopy(self.outpoints.outpoints),
-            "accepted_types": list(set(copy.deepcopy(ready_to_consume_types))),
-            "delivery_schedule": copy.deepcopy(self.outpoints.delivery_schedule),
-            "desired_material": copy.deepcopy(self.outpoints.desired_material),
-            "last_delivery_timers": copy.deepcopy(self.outpoints.last_delivery_timers),
+            "pos": list(self.outpoints.outpoints),
+            "accepted_types": list(set(ready_to_consume_types)),
+            "delivery_schedule": [el.copy() for el in self.outpoints.delivery_schedule],
+            "desired_material": self.outpoints.desired_material,
+            "last_delivery_timers": self.outpoints.last_delivery_timers,
         }
         state["num_actions"] = self.num_actions
         return state
