@@ -433,7 +433,10 @@ def ehp(env: Storehouse, state: np.array, verbose=False):
 @click.option("-s", "--save_episodes", default=False)
 @click.option("-pc", "--path_cost", default=False)
 @click.option("-r", "--random_Start", default=False)
-def main(log_folder, policy, conf_name, max_steps, visualize, timesteps, save_episodes, path_cost, random_start):
+@click.option("-w", "--path_reward_weight", default=0.5)
+def main(
+    log_folder, policy, conf_name, max_steps, visualize, timesteps, save_episodes, path_cost, random_start, path_reward_weight
+):
     global VISUAL
     global SLEEP_TIME
     VISUAL = int(visualize)
@@ -448,6 +451,7 @@ def main(log_folder, policy, conf_name, max_steps, visualize, timesteps, save_ep
         transpose_state=True,
         path_cost=int(path_cost),
         random_start=int(random_start),
+        path_reward_weight=path_reward_weight,
     )
 
     s = env.reset(VISUAL)

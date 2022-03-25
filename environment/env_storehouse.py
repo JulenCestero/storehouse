@@ -196,14 +196,14 @@ class Storehouse(gym.Env):
         random_start: bool = False,
         normalized_state: bool = False,
         path_cost: bool = False,
-        path_reward_proportion: float = PATH_REWARD_PROPORTION,
+        path_reward_weight: float = PATH_REWARD_PROPORTION,
     ):
         self.signature = {}
         self.max_id = 1
         self.max_steps = max_steps
         self.max_orders = max_orders
         self.log_flag = logging
-        self.path_reward_proportion = path_reward_proportion
+        self.path_reward_weight = path_reward_weight
         self.load_conf(conf_name)
         if augment is not None:
             self.augmented = augment
@@ -469,7 +469,7 @@ class Storehouse(gym.Env):
         if self.path_cost:
             micro_action_reward = self.normalize_path_cost(len(self.path) - 1, self.grid.shape)
             weighted_reward = (
-                (1 - self.path_reward_proportion) * macro_action_reward + self.path_reward_proportion * micro_action_reward
+                (1 - self.path_reward_weight) * macro_action_reward + self.path_reward_weight * micro_action_reward
                 if micro_action_reward <= 0
                 else -1
             )
