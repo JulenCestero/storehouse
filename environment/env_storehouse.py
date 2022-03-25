@@ -32,7 +32,7 @@ MIN_CNN_LEN = 32
 MIN_SB3_SIZE = 32
 EPISODE = 0
 NUM_RANDOM_STATES = 500
-PATH_REWARD_PROPORTION = 0.7
+PATH_REWARD_PROPORTION = 0.5
 
 
 class Score:
@@ -214,6 +214,7 @@ class Storehouse(gym.Env):
         self.score = Score()
         self.episode = []
         self.available_actions = []
+        self.invalid_actions = []
         self.logname = Path(logname)
         self.save_episodes = save_episodes
         self.transpose_state = transpose_state
@@ -645,7 +646,7 @@ class Storehouse(gym.Env):
         self.signature = signature
 
     def get_signature(self) -> dict:
-        state = {
+        return {
             "max_id": self.max_id,
             "done": self.done,
             "boxes": [
@@ -657,43 +658,38 @@ class Storehouse(gym.Env):
                 }
                 for id_box, box in self.material.items()
             ],
+            "restricted_cell": list(self.restricted_cells),
+            "agents": [
+                {
+                    "pos": agent.position,
+                    "item": self.material[agent.got_item].type if agent.got_item > 0 else 0,
+                    "item_id": int(agent.got_item) if agent.got_item > 0 else 0,
+                }
+                for agent in self.agents
+            ],
+            "entrypoints": [
+                {
+                    "pos": ep.position,
+                    "material_queue": [
+                        {
+                            "timer": int(el["timer"]),
+                            "material": Box(el["material"].id, el["material"].position, el["material"].type),
+                        }
+                        for el in ep.material_queue
+                    ],
+                    "wait_time_cumulate": ep.wait_time_cumulate,
+                }
+                for ep in self.entrypoints
+            ],
+            "outpoints": {
+                "pos": list(self.outpoints.outpoints),
+                "accepted_types": list(set(self.get_ready_to_consume_types())),
+                "delivery_schedule": [el.copy() for el in self.outpoints.delivery_schedule],
+                "desired_material": self.outpoints.desired_material,
+                "last_delivery_timers": self.outpoints.last_delivery_timers,
+            },
+            "num_actions": self.num_actions,
         }
-        state["restricted_cell"] = list(self.restricted_cells)
-        agents = list(self.agents)
-        state["agents"] = [
-            {
-                "pos": agent.position,
-                "item": self.material[agent.got_item].type if agent.got_item > 0 else 0,
-                "item_id": int(agent.got_item) if agent.got_item > 0 else 0,
-            }
-            for agent in agents
-        ]
-        # state["agents_raw"] = agents
-        # state["material_raw"] = copy.deepcopy(self.material)
-        state["entrypoints"] = [
-            {
-                "pos": ep.position,
-                "material_queue": [
-                    {
-                        "timer": int(el["timer"]),
-                        "material": Box(el["material"].id, el["material"].position, el["material"].type),
-                    }
-                    for el in ep.material_queue
-                ],
-                "wait_time_cumulate": ep.wait_time_cumulate,
-            }
-            for ep in self.entrypoints
-        ]
-        ready_to_consume_types = self.get_ready_to_consume_types()
-        state["outpoints"] = {
-            "pos": list(self.outpoints.outpoints),
-            "accepted_types": list(set(ready_to_consume_types)),
-            "delivery_schedule": [el.copy() for el in self.outpoints.delivery_schedule],
-            "desired_material": self.outpoints.desired_material,
-            "last_delivery_timers": self.outpoints.last_delivery_timers,
-        }
-        state["num_actions"] = self.num_actions
-        return state
 
     def save_state_simplified(self, reward: int, action: tuple):
         state = self.get_signature()
@@ -902,45 +898,18 @@ class Storehouse(gym.Env):
             info["done"] = "Max movements achieved. Well done!"
             if self.log_flag:
                 self.log(action)
-            self.last_r = reward
-            self.current_return += reward
-            info["delivered"] = self.score.delivered_boxes
-            self.last_info = info
-            return self.get_state(), reward, self.done, info
+            return self.return_result(reward, info)
         ####
-
         self.score.steps += 1
         if self.log_flag:
             self.log(action)
-
         # Update environment with the agent interaction
         if not self.done:
-            # Movement
-            start_cell = agent.position
-            move_status = self.move_agent(agent, action)
-            if move_status in (1, 2):  # If interacted with a Box
-                if move_status == 1 and agent.position in [
-                    entrypoint.position for entrypoint in self.entrypoints
-                ]:  # Added new box into the system
-                    box = [entrypoint for entrypoint in self.entrypoints if entrypoint.position == agent.position][
-                        0
-                    ].get_item()
-                    self.material[box.id] = box
-                else:
-                    box = self.material[self.grid[agent.position] if self.grid[agent.position] > 0 else agent.got_item]
-                info["Info"] = f"Box {box.id} moved"
-            else:
-                box = None
-            reward = self.get_reward(move_status, agent, box)
-            self.score.clear_run_score += reward
+            reward = self.act(agent, action, info)
         else:
             info["Info"] = "Done. Please reset the environment"
             reward = -1e3
-            self.last_r = reward
-            self.current_return += reward
-            info["delivered"] = self.score.delivered_boxes
-            self.last_info = info
-            return self.get_state(), reward, self.done, info
+            return self.return_result(reward, info)
         # Update environment unrelated to agent interaction
         self.outpoints_consume()
         for box in self.material.values():
@@ -962,6 +931,33 @@ class Storehouse(gym.Env):
             self.save_state_simplified(reward, action)
         if render:
             self.render()
+        return self.return_result(reward, info)
+
+    def act(self, agent, action, info):
+        # Movement
+        start_cell = agent.position
+        move_status = self.move_agent(agent, action)
+        if move_status in (1, 2):  # If interacted with a Box
+            if move_status == 1 and agent.position in [
+                entrypoint.position for entrypoint in self.entrypoints
+            ]:  # Added new box into the system
+                box = [entrypoint for entrypoint in self.entrypoints if entrypoint.position == agent.position][0].get_item()
+                self.material[box.id] = box
+            else:
+                box = self.material[self.grid[agent.position] if self.grid[agent.position] > 0 else agent.got_item]
+            info["Info"] = f"Box {box.id} moved"
+        else:
+            box = None
+        if move_status == 0:
+            self.invalid_actions.append(action)
+        else:
+            self.invalid_actions = []
+        result = self.get_reward(move_status, agent, box)
+        self.score.clear_run_score += result
+        return result
+
+    # TODO Rename this here and in `_step`
+    def return_result(self, reward, info):
         self.last_r = reward
         self.current_return += reward
         info["delivered"] = self.score.delivered_boxes
@@ -1029,6 +1025,7 @@ class Storehouse(gym.Env):
         random_flag = self.random_start
         self.signature = {}
         self.restricted_cells = []
+        self.invalid_actions = []
         self.episode = []
         self.grid = np.zeros(self.grid.shape)
         self.num_actions = 0

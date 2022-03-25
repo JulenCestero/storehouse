@@ -380,12 +380,12 @@ def take_box(
 ) -> np.array:
     if len(ready_boxes := get_ready_boxes_in_grid(state, ready_to_consume_types, num_types)):
         action = take_item_from_grid(state, ready_boxes)
-        return action if not verbose else (action, "take item from grid")
+        return (action, "take item from grid") if verbose else action
     elif len(entrypoints_with_items):
         action = take_item_from_ep(list(entrypoints_with_items.keys()))
-        return action if not verbose else (action, "take item from ep")
+        return (action, "take item from ep") if verbose else action
     else:
-        return idle() if not verbose else (idle(), "idle")
+        return (idle(), "idle") if verbose else idle()
 
 
 def act(env: Storehouse, action: tuple, act_verbose: str = "") -> tuple:
@@ -401,7 +401,7 @@ def act(env: Storehouse, action: tuple, act_verbose: str = "") -> tuple:
     return state, reward
 
 
-def ehp_only_state(env: Storehouse, state: np.array, verbose=False):
+def ehp(env: Storehouse, state: np.array, verbose=False):
     """
     EHP, fixed as a policy, usage:
         - To use for simulating the optimal policy, use the act function to move the
@@ -455,12 +455,12 @@ def main(log_folder, policy, conf_name, max_steps, visualize, timesteps, save_ep
     if not VISUAL:
         pbar = tqdm(total=timesteps)
     for _ in range(timesteps):
-        if policy == "ehp":
+        if policy == "ehp_old":
             enhanced_human_policy(env, s)
         elif policy == "ihp":
             initial_human_policy(env, s)
-        elif policy == "ehp_state":
-            action, act_info = ehp_only_state(env, s, verbose=True)
+        elif policy == "ehp":
+            action, act_info = ehp(env, s, verbose=True)
             s, r = act(env, action, act_info)
             if r == -1:
                 prueba = True
