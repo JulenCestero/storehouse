@@ -28,6 +28,35 @@
       }
     }
   },
+  "6x6slow": {
+    "grid": [6, 6],
+    "conf": {
+      "entrypoints": ["(0,0)", "(0,5)"],
+      "outpoints": ["(5,0)", "(5,5)"],
+      "num_agents": 1,
+      "material_types": {
+        "A": {
+          "create": {
+            "lambda": 15
+          },
+          "deliver": {
+            "lambda": 160
+          }
+        },
+        "B": {
+          "create": {
+            "lambda": 30
+          },
+          "deliver": {
+            "lambda": 200
+          }
+        }
+      },
+      "delivery_timer": {
+        "lambda": 50
+      }
+    }
+  },
   "6x6fast": {
     "grid": [6, 6],
     "conf": {

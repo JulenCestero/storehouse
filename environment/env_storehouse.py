@@ -32,6 +32,7 @@ MIN_CNN_LEN = 32
 MIN_SB3_SIZE = 32
 EPISODE = 0
 NUM_RANDOM_STATES = 500
+PATH_REWARD_PROPORTION = 0.7
 
 
 class Score:
@@ -62,7 +63,7 @@ class Box:
         self.age = age
         self.position = position
 
-    def update_age(self, num_steps: int):
+    def update_age(self, num_steps: int = 1):
         self.age += max(num_steps, 1)
 
     def __eq__(self, other):
@@ -110,7 +111,7 @@ class Entrypoint:
             logging.error(f"Error at get_item in Entrypoint {self.position}")
             raise Exception from ex
 
-    def update_entrypoint(self, steps: int):
+    def update_entrypoint(self, steps: int = 1):
         for material in self.material_queue:
             material["timer"] = max(0, material["timer"] - max(1, steps))
         self.wait_time_cumulate = max(0, self.wait_time_cumulate - max(1, steps))
@@ -142,7 +143,7 @@ class Outpoints:
         self.desired_material = ""
         self.last_delivery_timers = np.Inf
 
-    def update_timers(self, steps):
+    def update_timers(self, steps: int = 1):
         self.last_delivery_timers += max(1, steps)
         for delivery in self.delivery_schedule:
             delivery["timer"] = max(0, delivery["timer"] - max(1, steps))
@@ -195,12 +196,14 @@ class Storehouse(gym.Env):
         random_start: bool = False,
         normalized_state: bool = False,
         path_cost: bool = False,
+        path_reward_proportion: float = PATH_REWARD_PROPORTION,
     ):
         self.signature = {}
         self.max_id = 1
         self.max_steps = max_steps
         self.max_orders = max_orders
         self.log_flag = logging
+        self.path_reward_proportion = path_reward_proportion
         self.load_conf(conf_name)
         if augment is not None:
             self.augmented = augment
@@ -313,8 +316,6 @@ class Storehouse(gym.Env):
         end = grid.node(*reversed(end_position))
         path, runs = self.finder.find_path(start, end, grid)
         self.path = path
-        if len(path) == 0:
-            print("hola")
         return len(path) - 1  # If agent is idle, it counts as a movement of 1, we want 0
 
     def initialize_graph(self, shape: tuple):
@@ -465,8 +466,12 @@ class Storehouse(gym.Env):
         macro_action_reward = self.get_macro_action_reward(ag, box)
         weighted_reward = macro_action_reward
         if self.path_cost:
-            micro_action_reward = self.normalize_path_cost(len(self.path), self.grid.shape)
-            weighted_reward = 0.2 * macro_action_reward + 0.8 * micro_action_reward if micro_action_reward <= 0 else -1
+            micro_action_reward = self.normalize_path_cost(len(self.path) - 1, self.grid.shape)
+            weighted_reward = (
+                (1 - self.path_reward_proportion) * macro_action_reward + self.path_reward_proportion * micro_action_reward
+                if micro_action_reward <= 0
+                else -1
+            )
         # assert weighted_reward <= 0
         return weighted_reward
 
@@ -616,8 +621,14 @@ class Storehouse(gym.Env):
         self.outpoints.desired_material = signature["outpoints"]["desired_material"]
         self.outpoints.last_delivery_timers = signature["outpoints"]["last_delivery_timers"]
         for ep, info in zip(self.entrypoints, signature["entrypoints"]):
-            ep.material_queue = copy.deepcopy(info["material_queue_raw"])
-            ep.wait_time_cumulate = copy.deepcopy(info["wait_time_cumulate"])
+            ep.material_queue = [
+                {
+                    "timer": int(el["timer"]),
+                    "material": Box(el["material"].id, el["material"].position, el["material"].type),
+                }
+                for el in info["material_queue"]
+            ]
+            ep.wait_time_cumulate = info["wait_time_cumulate"]
             ep.position = info["pos"]
             # ep.material_queue = [{"timer": item["timer"], "type": item["material"].type} for item in
             #           copy.deepcopy(info["queue"])]
@@ -662,8 +673,14 @@ class Storehouse(gym.Env):
         state["entrypoints"] = [
             {
                 "pos": ep.position,
-                "material_queue_raw": copy.deepcopy(ep.material_queue),
-                "wait_time_cumulate": copy.deepcopy(ep.wait_time_cumulate),
+                "material_queue": [
+                    {
+                        "timer": int(el["timer"]),
+                        "material": Box(el["material"].id, el["material"].position, el["material"].type),
+                    }
+                    for el in ep.material_queue
+                ],
+                "wait_time_cumulate": ep.wait_time_cumulate,
             }
             for ep in self.entrypoints
         ]
@@ -693,7 +710,7 @@ class Storehouse(gym.Env):
                     if key == "outpoints"
                     else {"pos": [pos["pos"] for pos in value]}
                     for key, value in state.items()
-                    if key not in ["material_raw", "agents_raw", "done", "max_id"]
+                    if key not in ["material", "agents", "done", "max_id"]
                 },
             }
         )
@@ -927,15 +944,17 @@ class Storehouse(gym.Env):
         # Update environment unrelated to agent interaction
         self.outpoints_consume()
         for box in self.material.values():
-            box.update_age(len(self.path) - 1)
+            box.update_age(len(self.path) - 1) if self.path_cost else box.update_age(1)
         order = self.outpoints.create_delivery()
         if order is not None:
             self.max_id = random.choice(self.entrypoints).create_new_order(
                 {order["type"]: order["num_boxes"]}, self.max_id
             )  # TODO: Create load balancer
-        self.outpoints.update_timers(len(self.path) - 1)
+        self.outpoints.update_timers(len(self.path) - 1) if self.path_cost else self.outpoints.update_timers(1)
         for entrypoint in self.entrypoints:
-            self.grid[entrypoint.position] = entrypoint.update_entrypoint(len(self.path) - 1)
+            self.grid[entrypoint.position] = (
+                entrypoint.update_entrypoint(len(self.path) - 1) if self.path_cost else entrypoint.update_entrypoint(1)
+            )
         info["entrypoint queue"] = [len(entrypoint.material_queue) for entrypoint in self.entrypoints]
         info["outpoint queue"] = self.outpoints.delivery_schedule
         self.cum_reward += reward

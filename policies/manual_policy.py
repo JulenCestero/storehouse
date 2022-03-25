@@ -391,10 +391,10 @@ def take_box(
 def act(env: Storehouse, action: tuple, act_verbose: str = "") -> tuple:
     if action is not None:
         state, reward, done, info = env._step(action)
+        render(env, act_verbose, action, reward, info)
     else:
         done = True
         reward = 0
-    render(env, act_verbose, action, reward, info)
     s = check_reset(env, done)
     state = state if s is None else s
     sleep(SLEEP_TIME)
