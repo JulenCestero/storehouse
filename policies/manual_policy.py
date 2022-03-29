@@ -1,8 +1,12 @@
+import copy
 import operator
 from time import sleep
 
 import click
 import numpy as np
+from pathfinding.core.diagonal_movement import DiagonalMovement
+from pathfinding.core.grid import Grid
+from pathfinding.finder.a_star import AStarFinder
 from storehouse.environment.env_storehouse import Storehouse
 from tqdm import tqdm
 
@@ -251,10 +255,12 @@ def get_ready_boxes_in_grid(s: np.array, ready_types: set, num_types: int) -> li
 
 
 def filter_age_grid(age_grid: np.array, ready_boxes: list) -> np.array:
-    mask = np.zeros(age_grid.shape)
+    grid = age_grid
+    mask = np.zeros(grid.shape)
     for box in ready_boxes:
-        mask[box] = 1
-    return np.multiply(age_grid, mask)
+        if check_reachable(grid, (1, 0), box):
+            mask[box] = 1
+    return np.multiply(grid, mask)
 
 
 def get_oldest_box(age_grid: np.array, ready_boxes: list) -> tuple:
@@ -290,9 +296,14 @@ def take_item_from_ep(ep: list) -> None:
     return ep[np.random.choice(len(ep))]
 
 
+# def get_agent_position(grid: np.array) -> tuple:
+#     return tuple(el[0] for el in np.where(grid == grid.max()))
+
+
 def deposit_item_in_grid(state: np.array) -> np.array:
-    box_grid = state[0]
-    target_cell = find_target_cell(box_grid)
+    age_grid = state[1]
+    agent_grid = state[2]
+    target_cell = find_target_cell(age_grid)
     return None if target_cell is None else target_cell
 
 
@@ -300,11 +311,29 @@ def idle():
     return (0, 1)
 
 
-def find_target_cell(grid: np.array) -> tuple:
+def prepare_grid(matrix: np.array, start: tuple, end: tuple) -> Grid:
+    prepared_matrix = matrix
+    prepared_matrix[start] = 0
+    prepared_matrix[end] = 0
+    return Grid(matrix=np.negative(prepared_matrix) + 1)
+
+
+def check_reachable(matrix: np.array, start_cell: tuple, end_cell: tuple) -> bool:
+    grid = prepare_grid(copy.deepcopy(matrix), start_cell, end_cell)
+    start = grid.node(*reversed(start_cell))
+    end = grid.node(*reversed(end_cell))
+    finder = AStarFinder(diagonal_movement=DiagonalMovement.never)
+    path, runs = finder.find_path(start, end, grid)
+    return len(path)
+
+
+def find_target_cell(grid: np.array) -> tuple:  # TODO: Change to  pathfinding
     target_cell = None
     for ii in range(1, grid.shape[0] - 1):
         for jj in range(1, grid.shape[1] - 1):
             if grid[ii][jj] == 0:
+                if not check_reachable(grid, (1, 0), (ii, jj)):
+                    continue
                 target_cell = (ii, jj)
                 break
         else:
@@ -340,9 +369,10 @@ def drop_box(
     verbose=False,
 ) -> np.array:
     if any(item_type in ready_to_consume_types for item_type in agent_item_type if len(ready_to_consume_types)):
-        return deliver_box(outpoint_position) if not verbose else (deliver_box(outpoint_position), "deliver box")
+        return (deliver_box(outpoint_position), "deliver box") if verbose else deliver_box(outpoint_position)
+
     else:
-        return deposit_item_in_grid(state) if not verbose else (deposit_item_in_grid(state), "deposit item in grid")
+        return (deposit_item_in_grid(state), "deposit item in grid") if verbose else deposit_item_in_grid(state)
 
 
 def take_box(
@@ -350,28 +380,28 @@ def take_box(
 ) -> np.array:
     if len(ready_boxes := get_ready_boxes_in_grid(state, ready_to_consume_types, num_types)):
         action = take_item_from_grid(state, ready_boxes)
-        return action if not verbose else (action, "take item from grid")
+        return (action, "take item from grid") if verbose else action
     elif len(entrypoints_with_items):
         action = take_item_from_ep(list(entrypoints_with_items.keys()))
-        return action if not verbose else (action, "take item from ep")
+        return (action, "take item from ep") if verbose else action
     else:
-        return idle() if not verbose else (idle(), "idle")
+        return (idle(), "idle") if verbose else idle()
 
 
 def act(env: Storehouse, action: tuple, act_verbose: str = "") -> tuple:
     if action is not None:
         state, reward, done, info = env._step(action)
+        render(env, act_verbose, action, reward, info)
     else:
         done = True
         reward = 0
-    render(env, act_verbose, action, reward, info)
     s = check_reset(env, done)
     state = state if s is None else s
     sleep(SLEEP_TIME)
     return state, reward
 
 
-def ehp_only_state(env: Storehouse, state: np.array, verbose=False):
+def ehp(env: Storehouse, state: np.array, verbose=False):
     """
     EHP, fixed as a policy, usage:
         - To use for simulating the optimal policy, use the act function to move the
@@ -403,7 +433,10 @@ def ehp_only_state(env: Storehouse, state: np.array, verbose=False):
 @click.option("-s", "--save_episodes", default=False)
 @click.option("-pc", "--path_cost", default=False)
 @click.option("-r", "--random_Start", default=False)
-def main(log_folder, policy, conf_name, max_steps, visualize, timesteps, save_episodes, path_cost, random_start):
+@click.option("-w", "--path_reward_weight", default=0.5)
+def main(
+    log_folder, policy, conf_name, max_steps, visualize, timesteps, save_episodes, path_cost, random_start, path_reward_weight
+):
     global VISUAL
     global SLEEP_TIME
     VISUAL = int(visualize)
@@ -418,6 +451,7 @@ def main(log_folder, policy, conf_name, max_steps, visualize, timesteps, save_ep
         transpose_state=True,
         path_cost=int(path_cost),
         random_start=int(random_start),
+        path_reward_weight=path_reward_weight,
     )
 
     s = env.reset(VISUAL)
@@ -425,19 +459,25 @@ def main(log_folder, policy, conf_name, max_steps, visualize, timesteps, save_ep
     if not VISUAL:
         pbar = tqdm(total=timesteps)
     for _ in range(timesteps):
-        if policy == "ehp":
+        if policy == "ehp_old":
             enhanced_human_policy(env, s)
         elif policy == "ihp":
             initial_human_policy(env, s)
-        elif policy == "ehp_state":
-            action, act_info = ehp_only_state(env, s, verbose=True)
+        elif policy == "ehp":
+            action, act_info = ehp(env, s, verbose=True)
             s, r = act(env, action, act_info)
+            if r == -1:
+                prueba = True
+                print(prueba)
+            # import pdb
+
+            # pdb.set_trace()
             cum_reward += r
         else:
             raise NotImplementedError
         if not VISUAL:
             pbar.update(1)
-    print(f"Finish! Results saved in {log_folder}.\nMean score: {cum_reward / timesteps}")
+    print(f"Finish! Results saved in {log_folder}.\nMean score: {cum_reward / timesteps * int(max_steps)}")
 
 
 if __name__ == "__main__":
