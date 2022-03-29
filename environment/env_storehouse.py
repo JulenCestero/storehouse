@@ -244,15 +244,16 @@ class Storehouse(gym.Env):
             self.episode_folder.mkdir(parents=True, exist_ok=True)
         if self.log_flag:
             self.logname.mkdir(parents=True, exist_ok=True)
-            self.metrics_log = open(str(self.logname / self.logname.name) + "_metrics.csv", "w")
-            self.metrics_log.write("Delivered Boxes,Filled orders,Score,Steps,Ultra negative achieved,Mean box ages,Cueles\n")
+            self.metrics_log = f"{str(self.logname / self.logname.name)}_metrics.csv"
+            with open(self.metrics_log, "a") as f:
+                f.write("Delivered Boxes,Filled orders,Score,Steps,Ultra negative achieved,Mean box ages,Cueles\n")
             # self.actions_log = open(str(self.logname) + "_actions.csv", "w")
             # self.actions_log.write("")
 
-    def __del__(self):
-        if self.log_flag:
-            self.metrics_log.close()
-            # self.actions_log.close()
+    # def __del__(self):
+    # if self.log_flag:
+    # self.metrics_log.close()
+    # self.actions_log.close()
 
     def load_conf(self, conf: str = CONF_NAME):
         """
@@ -494,7 +495,8 @@ class Storehouse(gym.Env):
             self.score.box_ages += [box.age for box in self.material.values()]
             if not len(self.score.box_ages):
                 self.score.box_ages.append(0)
-            self.metrics_log.write(self.score.print_score() + "\n")
+            with open(self.metrics_log, "a") as f:
+                f.write(self.score.print_score() + "\n")
             if self.save_episodes:
                 with open(f"{self.episode_folder / self.logname.name}_episode_{EPISODE}.json", "w") as f:
                     json.dump(self.episode, f)
@@ -1018,6 +1020,10 @@ class Storehouse(gym.Env):
             states.append(self.get_signature())
         print(f"Finished! Created {num_states} states in {time() - t0}s")
         return states
+
+    def set_search(self):
+        self.log_flag = False
+        self.save_episodes = False
 
     def reset(self, render=False, force_clean=False) -> list:
         global EPISODE
