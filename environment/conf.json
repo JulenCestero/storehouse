@@ -45,7 +45,7 @@
         },
         "B": {
           "create": {
-            "lambda": 30
+            "lambda": 25
           },
           "deliver": {
             "lambda": 200
@@ -53,7 +53,7 @@
         }
       },
       "delivery_timer": {
-        "lambda": 50
+        "lambda": 80
       }
     }
   },
