@@ -47,12 +47,14 @@ class Score:
         self.steps = 0
         self.box_ages = []
         self.non_optimal_material = 0
+        self.timer = 0
 
     def print_score(self) -> str:
         return (
             f"{self.delivered_boxes}, {self.filled_orders}, {self.clear_run_score}, {self.steps},"
             f"{self.ultra_negative_achieved}, {mean(self.box_ages)},"
-            f"{self.non_optimal_material / max(1, self.delivered_boxes) * 100}"
+            f"{self.non_optimal_material / max(1, self.delivered_boxes) * 100},"
+            f"{self.timer}"
         )
 
 
@@ -235,7 +237,7 @@ class Storehouse(gym.Env):
         self.path = []
         self.num_actions = 0
         self.num_invalid = 0
-        self.cum_reward = 0
+        self.current_return = 0
         self.action_mask = np.zeros(len(list(range(self.action_space.n))))
         if self.random_start:
             self.random_initial_states = self.create_random_initial_states(NUM_RANDOM_STATES)
@@ -246,7 +248,7 @@ class Storehouse(gym.Env):
             self.logname.mkdir(parents=True, exist_ok=True)
             self.metrics_log = f"{str(self.logname / self.logname.name)}_metrics.csv"
             with open(self.metrics_log, "a") as f:
-                f.write("Delivered Boxes,Filled orders,Score,Steps,Ultra negative achieved,Mean box ages,Cueles\n")
+                f.write("Delivered Boxes,Filled orders,Score,Steps,Ultra negative achieved,Mean box ages,Cueles,time\n")
             # self.actions_log = open(str(self.logname) + "_actions.csv", "w")
             # self.actions_log.write("")
 
@@ -699,7 +701,7 @@ class Storehouse(gym.Env):
             {
                 "step": action,
                 "reward": reward,
-                "cum_reward": self.cum_reward,
+                "cum_reward": self.current_return,
                 "path": self.path,
                 "state": {
                     key: value
@@ -914,26 +916,37 @@ class Storehouse(gym.Env):
             return self.return_result(reward, info)
         # Update environment unrelated to agent interaction
         self.outpoints_consume()
-        for box in self.material.values():
-            box.update_age(len(self.path) - 1) if self.path_cost else box.update_age(1)
+        self.update_timers()
         order = self.outpoints.create_delivery()
         if order is not None:
             self.max_id = random.choice(self.entrypoints).create_new_order(
                 {order["type"]: order["num_boxes"]}, self.max_id
-            )  # TODO: Create load balancer
-        self.outpoints.update_timers(len(self.path) - 1) if self.path_cost else self.outpoints.update_timers(1)
-        for entrypoint in self.entrypoints:
-            self.grid[entrypoint.position] = (
-                entrypoint.update_entrypoint(len(self.path) - 1) if self.path_cost else entrypoint.update_entrypoint(1)
-            )
-        info["entrypoint queue"] = [len(entrypoint.material_queue) for entrypoint in self.entrypoints]
-        info["outpoint queue"] = self.outpoints.delivery_schedule
-        self.cum_reward += reward
+            )  # TODO: Create load balancer?
         if self.save_episodes:
             self.save_state_simplified(reward, action)
         if render:
             self.render()
         return self.return_result(reward, info)
+
+    def get_idle_time(self):
+        timers = [order["timer"] for order in self.outpoints.delivery_schedule] + [
+            ep.material_queue[0]["timer"] for ep in self.entrypoints if len(ep.material_queue) > 0
+        ]
+        try:
+            return min(timers)
+        except ValueError as ex:
+            return 1
+
+    def update_timers(self):
+        idle_time = self.get_idle_time()
+        steps = len(self.path) - 1 if self.path_cost else 1
+        steps = max(steps, idle_time)
+        self.score.timer += steps
+        for box in self.material.values():
+            box.update_age(steps)
+        self.outpoints.update_timers(steps)
+        for entrypoint in self.entrypoints:
+            self.grid[entrypoint.position] = entrypoint.update_entrypoint(steps)
 
     def act(self, agent, action, info):
         # Movement
@@ -962,7 +975,10 @@ class Storehouse(gym.Env):
     def return_result(self, reward, info):
         self.last_r = reward
         self.current_return += reward
+        info["timer"] = self.score.timer
         info["delivered"] = self.score.delivered_boxes
+        info["entrypoint queue"] = [len(entrypoint.material_queue) for entrypoint in self.entrypoints]
+        info["outpoint queue"] = self.outpoints.delivery_schedule
         self.last_info = info
         return self.get_state(), reward, self.done, info
 
@@ -977,10 +993,6 @@ class Storehouse(gym.Env):
         self.action = self.norm_action(action)
         assert action == self.denorm_action(self.action)
         state, reward, done, info = self._step(self.action)
-        info["delivered"] = self.score.delivered_boxes
-        self.last_r = reward
-        self.current_return += reward
-        self.last_info = info
         return state, reward, done, info
 
     def create_random_box(self, position: tuple, type: str = None, age: int = None):
@@ -1051,7 +1063,7 @@ class Storehouse(gym.Env):
         self.score.reset()
         self.num_invalid = 0
         self.number_actions = 0
-        self.cum_reward = 0
+        self.current_return = 0
         if not len(self.get_available_actions()):
             return self.reset(render)
         if render:
