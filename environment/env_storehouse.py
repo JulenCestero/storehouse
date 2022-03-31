@@ -507,7 +507,7 @@ class Storehouse(gym.Env):
 
     @staticmethod
     def normalize_age(age: int) -> float:
-        return min(max(age, 0), 100) / 100 * 255
+        return min(max(age, 0), 1000) / 1000 * 255
 
     def normalize_type(self, type: str) -> float:
         return (ord(type) - (ord("A") - 1)) * 255 / len(self.type_information)
