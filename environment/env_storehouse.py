@@ -200,6 +200,9 @@ class Storehouse(gym.Env):
         path_cost: bool = False,
         path_reward_weight: float = PATH_REWARD_PROPORTION,
     ):
+        # logging.info(
+        #     f"Logging: {logging}, save_episodes: {save_episodes}, max_steps: {max_steps}, conf_name: {conf_name}, augmented: {augment}, random_start: {random_start}, path_cost: {path_cost}, path_weights: {path_reward_weight}"
+        # )
         self.signature = {}
         self.max_id = 1
         self.max_steps = max_steps
@@ -909,14 +912,14 @@ class Storehouse(gym.Env):
             self.log(action)
         # Update environment with the agent interaction
         if not self.done:
-            reward = self.act(agent, action, info)
+            reward, move_status = self.act(agent, action, info)
         else:
             info["Info"] = "Done. Please reset the environment"
             reward = -1e3
             return self.return_result(reward, info)
         # Update environment unrelated to agent interaction
         self.outpoints_consume()
-        self.update_timers()
+        self.update_timers(move_status)
         order = self.outpoints.create_delivery()
         if order is not None:
             self.max_id = random.choice(self.entrypoints).create_new_order(
@@ -937,10 +940,18 @@ class Storehouse(gym.Env):
         except ValueError as ex:
             return 1
 
-    def update_timers(self):
+    def detect_idle(self) -> bool:
+        A = bool(self.agents[0].got_item)
+        O = bool(self.outpoints.desired_material)
+        S = bool(len(self.material))
+        E = any(not bool(ep.material_queue[0]["timer"]) for ep in self.entrypoints if len(ep.material_queue) > 0)
+        return (not A and not E and not O) or (not A and not E and not S)
+
+    def update_timers(self, move_status: int):
         idle_time = self.get_idle_time()
         steps = len(self.path) - 1 if self.path_cost else 1
-        steps = max(steps, idle_time)
+        if self.detect_idle() and move_status == 3:
+            steps = max(steps, idle_time)
         self.score.timer += steps
         for box in self.material.values():
             box.update_age(steps)
@@ -969,9 +980,8 @@ class Storehouse(gym.Env):
             self.invalid_actions = []
         result = self.get_reward(move_status, agent, box)
         self.score.clear_run_score += result
-        return result
+        return result, move_status
 
-    # TODO Rename this here and in `_step`
     def return_result(self, reward, info):
         self.last_r = reward
         self.current_return += reward

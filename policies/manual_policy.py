@@ -370,7 +370,6 @@ def drop_box(
 ) -> np.array:
     if any(item_type in ready_to_consume_types for item_type in agent_item_type if len(ready_to_consume_types)):
         return (deliver_box(outpoint_position), "deliver box") if verbose else deliver_box(outpoint_position)
-
     else:
         return (deposit_item_in_grid(state), "deposit item in grid") if verbose else deposit_item_in_grid(state)
 
