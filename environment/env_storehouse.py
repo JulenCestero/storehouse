@@ -429,11 +429,11 @@ class Storehouse(gym.Env):
                     self.restricted_cells.append(adjacent_cell)
 
     @staticmethod
-    def get_age_factor(young, old):
+    def get_age_factor(age):
         """
-        Age substraction bounded within [0, 100]. Returns the percentage of the age factor [0, 1]. Linear (for now)
+        Age bounded within [0, 500]. Returns the percentage of the age factor [0, 1]. Linear (for now)
         """
-        return min(max(abs(old - young), 0), 100) / 100
+        return min(max(age, 0), 500) / 500
 
     def get_entrypoints_with_items(self):
         try:
@@ -447,19 +447,12 @@ class Storehouse(gym.Env):
         return entrypoints_with_items
 
     def get_macro_action_reward(self, ag: Agent, box: Box = None) -> float:
-        if any(True for element in self.outpoints.delivery_schedule if element["timer"] < 1):
+        if self.get_ready_to_consume_types():
             if ag.position in self.outpoints.outpoints:
                 return self.delivery_reward(box)
-            entrypoints_with_items = self.get_entrypoints_with_items()
-            return -0.9 if len(self.material) or len(entrypoints_with_items) else 0
-        elif any(
-            not (entrypoint.material_queue[0]["timer"])
-            for entrypoint in self.entrypoints
-            if len(entrypoint.material_queue) > 0
-        ):
+            return -0.9 if len(self.material) or self.get_entrypoints_with_items() else 0
+        elif not self.get_ready_to_consume_types() and self.get_entrypoints_with_items():
             return -0.9
-        elif len(self.outpoints.delivery_schedule) == 0:
-            return 0
         else:
             return 0
 
@@ -489,8 +482,8 @@ class Storehouse(gym.Env):
             key=operator.attrgetter("age"),
         )
 
-        age_factor = self.get_age_factor(box.age, oldest_box.age)
-        if age_factor != 0:
+        age_factor = self.get_age_factor(box.age)
+        if box.id != oldest_box.id:
             self.score.non_optimal_material += 1
         self.score.delivered_boxes += 1
         return min_rew * age_factor
