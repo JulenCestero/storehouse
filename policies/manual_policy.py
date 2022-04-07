@@ -441,7 +441,7 @@ def main(
     VISUAL = int(visualize)
     SLEEP_TIME = 0.2 if visualize else 0.00
     env = Storehouse(
-        "log/log" if not log_folder else log_folder,
+        log_folder or "log/log",
         logging=bool(log_folder),
         save_episodes=save_episodes,
         conf_name=conf_name,

@@ -790,9 +790,9 @@ class Storehouse(gym.Env):
         # state_mix = state_mix.reshape(size + (self.feature_number,))
         # return state_mix.transpose([2, 0, 1]) if self.transpose_state else state_mix
 
-    def __assert_movement(self, ag: Agent, movement: tuple) -> int:
+    def assert_movement(self, ag: Agent, movement: tuple) -> int:
         """
-        (not yet) DEPRECATED!
+        TODO: simplify this mess
         """
         try:  # Checking if the new position is valid
             _ = self.grid[movement]
@@ -822,7 +822,10 @@ class Storehouse(gym.Env):
             return 0
         return 1
 
-    def assert_movement(self, movement: tuple) -> int:
+    def __assert_movement(self, movement: tuple) -> int:
+        """
+        IDEAL WORLD...
+        """
         if movement in self.available_actions:
             return 1
         self.num_invalid += 1
@@ -843,7 +846,7 @@ class Storehouse(gym.Env):
 
         !IMPROVEMENT IDEA: Delete all the asserts and just check if the movement is in the available movements
         """
-        if not self.__assert_movement(ag, movement):
+        if not self.assert_movement(ag, movement):
             return 0
         if self.grid[movement] > 0:  # If cell has object TAKE
             return self.take_item(ag, movement)
@@ -912,7 +915,7 @@ class Storehouse(gym.Env):
             return self.return_result(reward, info)
         # Update environment unrelated to agent interaction
         self.outpoints_consume()
-        self.update_timers(move_status)
+        self.update_timers()
         order = self.outpoints.create_delivery()
         if order is not None:
             self.max_id = random.choice(self.entrypoints).create_new_order(
@@ -940,10 +943,10 @@ class Storehouse(gym.Env):
         E = any(not bool(ep.material_queue[0]["timer"]) for ep in self.entrypoints if len(ep.material_queue) > 0)
         return (not A and not E and not O) or (not A and not E and not S)
 
-    def update_timers(self, move_status: int):
+    def update_timers(self):
         idle_time = self.get_idle_time()
         steps = len(self.path) - 1 if self.path_cost else 1
-        if self.detect_idle() and move_status == 3:
+        if self.detect_idle():
             steps = max(steps, idle_time)
         self.score.timer += steps
         for box in self.material.values():
