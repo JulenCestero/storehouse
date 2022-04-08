@@ -1,4 +1,3 @@
-import copy
 import itertools
 import json
 import logging
@@ -15,6 +14,7 @@ import gym
 import networkx as nx
 import numpy as np
 from colorama import Back, Fore, Style
+from matplotlib import pyplot as plt
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
@@ -1115,6 +1115,19 @@ class Storehouse(gym.Env):
         Decodes the grid from letters to numbers
         """
         return ord(letter) - (ord("A") - 1)
+
+    def render_state(self, dark=True):
+
+        state = (
+            np.flip(np.rot90(np.transpose(self.get_state().reshape((self.feature_number,) + self.grid.shape)), k=3), axis=1)
+            / 255.0
+        )
+        if not dark:
+            state = abs(state - 1)
+        plt.clf()
+        plt.imshow(state)
+        plt.draw()
+        plt.pause(10e-10)
 
     def render(self):
         """
