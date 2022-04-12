@@ -29,7 +29,7 @@ def random_agent(env=Storehouse(), timesteps: int = STEPS, visualize=True):
 @click.command()
 @click.option("-l", "--log_folder", default="log/log")
 @click.option("-c", "--conf_name", default="6x6fast")
-@click.option("-m", "--max_steps", default=50)
+@click.option("-m", "--max_steps", default=100)
 @click.option("-v", "--visualize", default=0)
 @click.option("-r", "--random_start", default=0)
 @click.option("-pc", "--path_cost", default=False)

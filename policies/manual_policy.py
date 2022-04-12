@@ -370,7 +370,6 @@ def drop_box(
 ) -> np.array:
     if any(item_type in ready_to_consume_types for item_type in agent_item_type if len(ready_to_consume_types)):
         return (deliver_box(outpoint_position), "deliver box") if verbose else deliver_box(outpoint_position)
-
     else:
         return (deposit_item_in_grid(state), "deposit item in grid") if verbose else deposit_item_in_grid(state)
 
@@ -427,7 +426,7 @@ def ehp(env: Storehouse, state: np.array, verbose=False):
 @click.option("-l", "--log_folder", default=None)
 @click.option("-p", "--policy", default="ehp")
 @click.option("-c", "--conf_name", default="6x6fast")
-@click.option("-m", "--max_steps", default=50)
+@click.option("-m", "--max_steps", default=100)
 @click.option("-v", "--visualize", default=0)
 @click.option("-t", "--timesteps", default=STEPS)
 @click.option("-s", "--save_episodes", default=False)
@@ -442,7 +441,7 @@ def main(
     VISUAL = int(visualize)
     SLEEP_TIME = 0.2 if visualize else 0.00
     env = Storehouse(
-        "log/log" if not log_folder else log_folder,
+        log_folder or "log/log",
         logging=bool(log_folder),
         save_episodes=save_episodes,
         conf_name=conf_name,
