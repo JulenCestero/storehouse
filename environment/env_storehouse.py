@@ -284,7 +284,7 @@ class Storehouse(gym.Env):
         )
         self.num_agents = conf["num_agents"]
 
-    def outpoints_consume(self):
+    def outpoints_consume(self):  # sourcery skip: raise-specific-error
         """
         Function that consumes all the materials dropped in outpoints. If the material is not listed
         within the self.material list, an error is raised
@@ -463,15 +463,16 @@ class Storehouse(gym.Env):
     def get_reward(self, move_status: int, ag: Agent, box: Box = None) -> float:
         if move_status == 0:
             return -1
+        elif move_status == 3:
+            return -0.9
         macro_action_reward = self.get_macro_action_reward(ag, box)
+        if macro_action_reward == -0.9:
+            return -0.9
         weighted_reward = macro_action_reward
         if self.path_cost:
+            w = self.path_reward_weight
             micro_action_reward = self.normalize_path_cost(len(self.path) - 1, self.grid.shape)
-            weighted_reward = (
-                (1 - self.path_reward_weight) * macro_action_reward + self.path_reward_weight * micro_action_reward
-                if micro_action_reward <= 0
-                else -1
-            )
+            weighted_reward = (1 - w) * macro_action_reward + w * micro_action_reward if micro_action_reward <= 0 else -1
         # assert weighted_reward <= 0
         return weighted_reward
 
