@@ -105,7 +105,7 @@ class Entrypoint:
             max_id += 1
         return max_id
 
-    def get_item(self) -> Box:
+    def get_item(self) -> Box:  # sourcery skip: raise-specific-error
         try:
             assert self.material_queue[0]["timer"] == 0
             return self.material_queue.pop(0)["material"]
@@ -120,7 +120,7 @@ class Entrypoint:
         try:
             assert self.material_queue[0]["timer"] == 0
             return self.material_queue[0]["material"].id
-        except:
+        except Exception:
             return 0
 
     def reset(self):
@@ -945,10 +945,14 @@ class Storehouse(gym.Env):
         return (not A and not E and not O) or (not A and not E and not S)
 
     def update_timers(self):
-        idle_time = self.get_idle_time()
-        steps = len(self.path) - 1 if self.path_cost else 1
-        if self.detect_idle():
-            steps = max(steps, idle_time)
+        semi_markovian = True
+        if semi_markovian:
+            idle_time = self.get_idle_time()
+            steps = len(self.path) - 1 if self.path_cost else 1
+            if self.detect_idle():
+                steps = max(steps, idle_time)
+        else:
+            steps = 1
         self.score.timer += steps
         for box in self.material.values():
             box.update_age(steps)
