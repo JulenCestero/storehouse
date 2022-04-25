@@ -14,10 +14,10 @@ import gym
 import networkx as nx
 import numpy as np
 from colorama import Back, Fore, Style
+from matplotlib import pyplot as plt
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
-from scipy.stats import poisson
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 
@@ -91,7 +91,8 @@ class Entrypoint:
         self.wait_time_cumulate = 0
         self.material_queue = []  # FIFO
 
-    def create_new_order(self, material_type: str, number_of_material: int, max_id: int):
+    def create_new_order(self, order: dict, max_id: int):  # Order has the form {type: number_of_boxes}
+        ((material_type, number_of_material),) = order.items()
         for _ in range(number_of_material):
             wait_time = round(np.random.poisson(self.type_information[material_type]["create"]["lambda"]))
             self.wait_time_cumulate += wait_time
@@ -128,23 +129,10 @@ class Entrypoint:
 
 
 class Order:
-    def __init__(self, type: str, mean: int, num_boxes: int, timer: int = 0, ready: bool = False):
+    def __init__(self, type: str, timer: int, num_boxes: int):
         self.type = type
-        self.mean = mean
-        self.num_boxes = num_boxes
         self.timer = timer
-        self.ready = ready
-
-    def update_timer(self, step: int = 1):
-        self.timer += step
-        if not self.ready:
-            # prob = poisson.cdf(self.timer, self.mean)
-            prob = 0.05
-            if np.random.choice([True, False], p=[prob, 1 - prob]):
-                self.ready = True
-
-    def __repr__(self) -> str:
-        return f"Order(type={self.type}, mean={self.mean}, num_boxes={self.num_boxes}, timer={self.timer}, ready={self.ready})"
+        self.num_boxes = num_boxes
 
 
 class Outpoints:
@@ -167,21 +155,22 @@ class Outpoints:
     def update_timers(self, steps: int = 1):
         self.last_delivery_timers += max(1, steps)
         for delivery in self.delivery_schedule:
-            delivery.update_timer(max(0, max(1, steps)))
-        if len(self.delivery_schedule) > 0 and self.delivery_schedule[0].ready:
+            delivery.timer = max(0, delivery.timer - max(1, steps))
+        if len(self.delivery_schedule) > 0 and self.delivery_schedule[0].timer == 0:
             self.desired_material = self.delivery_schedule[0].type
         else:
             self.desired_material = ""
 
     def create_order(self, type: str) -> dict:
+        timer = round(np.random.poisson(self.type_information[type]["deliver"]["lambda"]))
         num_boxes = random.randrange(self.min_num_boxes, self.max_num_boxes + 1)
-        return Order(type=type, mean=self.type_information[type]["deliver"]["lambda"], num_boxes=num_boxes)
+        return Order(type, timer, num_boxes)
         # return {"type": type, "timer": timer, "num_boxes": num_boxes}
 
     def create_delivery(self) -> dict:
         if self.last_delivery_timers <= np.random.poisson(self.delivery_timer_info["lambda"]):
             return None
-        if any(order.ready for order in self.delivery_schedule):
+        if len([order.timer for order in self.delivery_schedule if order.timer == 0]) > self.max_orders:
             return None
         box_type = random.choice(list(self.type_information.keys()))
         order = self.create_order(box_type)
@@ -191,13 +180,13 @@ class Outpoints:
 
     def consume(self, box: Box) -> int:
         for ii, order in enumerate(self.delivery_schedule):
-            if box.type == order.type and order.ready:
+            if box.type == order.type and order.timer == 0:
                 self.delivery_schedule[ii].num_boxes -= 1
                 if self.delivery_schedule[ii].num_boxes < 1:
                     del self.delivery_schedule[ii]
-                    return 2
-                return 1
-        return 0
+                    return 2  # Order finished
+                return 1  # Box delivered but order not finished
+        return 0  # Not box
 
 
 class Storehouse(gym.Env):
@@ -479,6 +468,8 @@ class Storehouse(gym.Env):
     def get_reward(self, move_status: int, ag: Agent, box: Box = None) -> float:
         if move_status == 0:
             return -1
+        elif move_status == 3:
+            return -0.9
         macro_action_reward = self.get_macro_action_reward(ag, box)
         if macro_action_reward == -0.9:
             return -0.9
@@ -528,7 +519,7 @@ class Storehouse(gym.Env):
 
     def get_ready_to_consume_types(self):
         try:
-            return {order.type for order in self.outpoints.delivery_schedule if order.ready}
+            return {order.type for order in self.outpoints.delivery_schedule if order.timer == 0}
         except IndexError:
             return {}
 
@@ -634,7 +625,7 @@ class Storehouse(gym.Env):
         self.material = {box["id"]: Box(box["id"], box["pos"], box["type"], box["age"]) for box in signature["boxes"]}
         self.calculate_restricted_cells()
         self.outpoints.delivery_schedule = [
-            Order(el.type, el.mean, el.num_boxes, el.timer, el.ready) for el in signature["outpoints"]["delivery_schedule"]
+            Order(el.type, el.timer, el.num_boxes) for el in signature["outpoints"]["delivery_schedule"]
         ]
         self.outpoints.desired_material = signature["outpoints"]["desired_material"]
         self.outpoints.last_delivery_timers = signature["outpoints"]["last_delivery_timers"]
@@ -701,9 +692,7 @@ class Storehouse(gym.Env):
             "outpoints": {
                 "pos": list(self.outpoints.outpoints),
                 "accepted_types": list(set(self.get_ready_to_consume_types())),
-                "delivery_schedule": [
-                    Order(el.type, el.mean, el.num_boxes, el.timer, el.ready) for el in self.outpoints.delivery_schedule
-                ],
+                "delivery_schedule": [Order(el.type, el.timer, el.num_boxes) for el in self.outpoints.delivery_schedule],
                 "desired_material": self.outpoints.desired_material,
                 "last_delivery_timers": self.outpoints.last_delivery_timers,
             },
@@ -822,7 +811,7 @@ class Storehouse(gym.Env):
                 assert not (
                     movement in self.outpoints.outpoints
                     and self.material[ag.got_item].type
-                    not in [material.type for material in self.outpoints.delivery_schedule if material.ready]
+                    not in [material.type for material in self.outpoints.delivery_schedule if material.timer < 1]
                 )  #  Go to not ready outpoints
                 assert movement not in [box.position for box in self.material.values()]
                 assert not (
@@ -937,15 +926,16 @@ class Storehouse(gym.Env):
         self.update_timers()
         order = self.outpoints.create_delivery()
         if order is not None:
-            # TODO: Create load balancer?
-            self.max_id = random.choice(self.entrypoints).create_new_order(order.type, order.num_boxes, self.max_id)
+            self.max_id = random.choice(self.entrypoints).create_new_order(
+                {order.type: order.num_boxes}, self.max_id
+            )  # TODO: Create load balancer?
         if self.save_episodes:
             self.save_state_simplified(reward, action)
         if render:
             self.render()
         return self.return_result(reward, info)
 
-    def __get_idle_time(self):
+    def get_idle_time(self):
         timers = [order.timer for order in self.outpoints.delivery_schedule] + [
             ep.material_queue[0]["timer"] for ep in self.entrypoints if len(ep.material_queue) > 0
         ]
@@ -962,7 +952,7 @@ class Storehouse(gym.Env):
         return (not A and not E and not O) or (not A and not E and not S)
 
     def update_timers(self):
-        semi_markovian = False
+        semi_markovian = True
         if semi_markovian:
             idle_time = self.get_idle_time()
             steps = len(self.path) - 1 if self.path_cost else 1
@@ -1044,11 +1034,12 @@ class Storehouse(gym.Env):
                 yield n
                 i -= n
 
-        for type, info in self.type_information.items():
+        for type in self.type_information.keys():
             num_boxes_type = len([box for box in self.material.values() if box.type == type])
             num_boxes_distribution = decomposition(num_boxes_type)
             for num_boxes in num_boxes_distribution:
-                self.outpoints.delivery_schedule.append(Order(type=type, mean=info["deliver"]["lambda"], num_boxes=num_boxes))
+                timer = round(np.random.poisson(10))  # Magic number
+                self.outpoints.delivery_schedule.append(Order(type, timer, num_boxes))
 
     def create_random_initial_states(self, num_states) -> list:
         states = []
@@ -1138,7 +1129,6 @@ class Storehouse(gym.Env):
         return ord(letter) - (ord("A") - 1)
 
     def render_state(self, dark=True):
-        from matplotlib import pyplot as plt
 
         state = (
             np.flip(np.rot90(np.transpose(self.get_state().reshape((self.feature_number,) + self.grid.shape)), k=3), axis=1)
@@ -1194,7 +1184,7 @@ class Storehouse(gym.Env):
                     if (r, e) in [entrypoint.position for entrypoint in self.entrypoints]:
                         encoded_el = f"{Back.GREEN}{Fore.BLACK}{encoded_el}{Style.RESET_ALL}"
                     if (r, e) in self.outpoints.outpoints:
-                        if self.get_ready_to_consume_types():
+                        if self.outpoints.desired_material:
                             encoded_el = f"{Back.MAGENTA}{Fore.BLACK}{encoded_el}{Style.RESET_ALL}"
                         else:
                             encoded_el = f"{Back.WHITE}{Fore.BLACK}{encoded_el}{Style.RESET_ALL}"
@@ -1224,7 +1214,7 @@ if __name__ == "__main__":
         while not done and t < 100:
             a = np.random.choice(n_a)
             s, r, done, inf = env.step(a)
-            print(f"Action: {env.norm_action(a)}, Reward: {r}, Info: {inf}")
+            print(f"Action: {env.norm_action(a)}, Reward: {r}")
             env.render()
             t += 1
             sleep(0.5)

@@ -468,9 +468,6 @@ def main(
             if r == -1:
                 prueba = True
                 print(prueba)
-            # import pdb
-
-            # pdb.set_trace()
             cum_reward += r
         else:
             raise NotImplementedError
