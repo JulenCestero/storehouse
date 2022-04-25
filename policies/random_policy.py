@@ -27,7 +27,7 @@ def random_agent(env=Storehouse(), timesteps: int = STEPS, visualize=True):
 
 
 @click.command()
-@click.option("-l", "--log_folder", default="log/log")
+@click.option("-l", "--log_folder", default=None)
 @click.option("-c", "--conf_name", default="6x6fast")
 @click.option("-m", "--max_steps", default=100)
 @click.option("-v", "--visualize", default=0)
@@ -37,7 +37,7 @@ def random_agent(env=Storehouse(), timesteps: int = STEPS, visualize=True):
 @click.option("-w", "--path_reward_weight", default=0.5)
 def main(log_folder, conf_name, max_steps, visualize, path_cost, timesteps, random_start, path_reward_weight):
     env = Storehouse(
-        "log/log" if not log_folder else log_folder,
+        log_folder or "log/log",
         logging=bool(log_folder),
         save_episodes=False,
         conf_name=conf_name,
@@ -47,9 +47,8 @@ def main(log_folder, conf_name, max_steps, visualize, path_cost, timesteps, rand
         random_start=random_start,
         path_reward_weight=path_reward_weight,
     )
-
     mean_reward = random_agent(env, timesteps=timesteps, visualize=visualize)
-    print(f"Results saved in {log_folder}. Mean reward: {mean_reward}")
+    print(f"Results saved in {log_folder}. Mean reward: {mean_reward * int(max_steps)}")
 
 
 if __name__ == "__main__":

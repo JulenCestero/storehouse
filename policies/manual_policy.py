@@ -1,5 +1,6 @@
 import copy
 import operator
+import pprint
 from time import sleep
 
 import click
@@ -271,7 +272,8 @@ def get_oldest_box(age_grid: np.array, ready_boxes: list) -> tuple:
 
 def render(env: Storehouse, general_action: str, action: tuple, reward: float, info: dict):
     if VISUAL:
-        print(f"General action: {general_action}\nAction: {action}\nReward: {reward}\n{info}")
+        pp = pprint.PrettyPrinter(depth=4, sort_dicts=False)
+        pp.pprint({"General action": general_action, "Action": action, "Reward": reward, "Info": info})
         env.render()
 
 
