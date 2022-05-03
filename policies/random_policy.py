@@ -18,8 +18,8 @@ def random_agent(env=Storehouse(), timesteps: int = STEPS, visualize=True):
         s, r, done, info = env.step(action)
         cum_reward += r
         if visualize:
-            env.render()
             print(f"Action: {action}\nReward: {r}\n{info}")
+            env.render()
             sleep(SLEEP_TIME)
         if done:
             s = env.reset(visualize)
@@ -36,6 +36,8 @@ def random_agent(env=Storehouse(), timesteps: int = STEPS, visualize=True):
 @click.option("-t", "--timesteps", default=STEPS)
 @click.option("-w", "--path_reward_weight", default=0.5)
 def main(log_folder, conf_name, max_steps, visualize, path_cost, timesteps, random_start, path_reward_weight):
+    global SLEEP_TIME
+    SLEEP_TIME = 0.2 if visualize else SLEEP_TIME
     env = Storehouse(
         log_folder or "log/log",
         logging=bool(log_folder),

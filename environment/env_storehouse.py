@@ -1210,6 +1210,11 @@ class Storehouse(gym.Env):
         maze += "+\n"
         print(maze)
 
+    def seed(self, seed: int = ...) -> list:
+        self.observation_space.seed(seed)
+        self.action_space.seed(seed)
+        return [seed]
+
 
 if __name__ == "__main__":
     from time import sleep
