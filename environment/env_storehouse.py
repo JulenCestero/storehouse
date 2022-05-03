@@ -148,7 +148,7 @@ class Delivery:
         self.timer += step
         if not self.ready:
             # prob = poisson.cdf(self.timer, self.mean)
-            prob = 0.05
+            prob = 0.04
             if np.random.choice([True, False], p=[prob, 1 - prob]):
                 self.ready = True
 
@@ -192,7 +192,9 @@ class Outpoints:
         # return {"type": type, "timer": timer, "num_boxes": num_boxes}
 
     def create_delivery(self) -> dict:
-        if self.last_delivery_timers <= np.random.poisson(self.delivery_timer_info["lambda"]):
+        # if self.last_delivery_timers <= np.random.poisson(self.delivery_timer_info["lambda"]):
+        prob = 0.2
+        if not np.random.choice([True, False], p=[prob, 1 - prob]):
             return None
         if any(order.ready for order in self.delivery_schedule):
             return None
@@ -1213,6 +1215,7 @@ class Storehouse(gym.Env):
     def seed(self, seed: int = ...) -> list:
         self.observation_space.seed(seed)
         self.action_space.seed(seed)
+        np.random.see
         return [seed]
 
 
