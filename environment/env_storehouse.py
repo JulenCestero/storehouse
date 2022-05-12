@@ -99,7 +99,8 @@ class Agent:
 
 
 class Entrypoint:
-    def __init__(self, position: tuple, type_information: dict):
+    def __init__(self, position: tuple, type_information: dict, rng: list):
+        self.rng = rng
         self.type_information = type_information
         self.position = position
         self.material_queue = []  # FIFO
@@ -125,7 +126,7 @@ class Entrypoint:
         for ii, material in enumerate(self.material_queue):
             material.update_age(max(1, steps))
             # prob = poisson.cdf(material.timer, mean) # mean depends on material type
-            if np.random.choice([True, False], p=[prob, 1 - prob]):
+            if self.rng[0].choice([True, False], p=[prob, 1 - prob]):
                 material.ready = True
                 self.ready_material.append(material)
                 del self.material_queue[ii]
@@ -137,19 +138,28 @@ class Entrypoint:
 
 
 class Delivery:
-    def __init__(self, type: str, mean: int, num_boxes: int, timer: int = 0, ready: bool = False):
+    def __init__(
+        self,
+        mean: int,
+        num_boxes: int,
+        type: str,
+        rng: list,
+        timer: int = 0,
+        ready: bool = False,
+    ):
         self.type = type
         self.mean = mean
         self.num_boxes = num_boxes
         self.timer = timer
         self.ready = ready
+        self.rng = rng
 
     def update_timer(self, step: int = 1):
         self.timer += step
         if not self.ready:
             # prob = poisson.cdf(self.timer, self.mean)
             prob = 0.04
-            if np.random.choice([True, False], p=[prob, 1 - prob]):
+            if self.rng[0].choice([True, False], p=[prob, 1 - prob]):
                 self.ready = True
 
     def __repr__(self) -> str:
@@ -167,7 +177,7 @@ class Delivery:
 
 
 class Outpoints:
-    def __init__(self, outpoints: list, type_information: dict, delivery_timer: dict, max_orders: int):
+    def __init__(self, outpoints: list, type_information: dict, delivery_timer: dict, max_orders: int, rng: list):
         self.outpoints = outpoints  # Position
         self.type_information = type_information
         self.delivery_timer_info = delivery_timer
@@ -176,6 +186,7 @@ class Outpoints:
         self.min_num_boxes = MIN_NUM_BOXES
         self.delivery_schedule = []  # Form: [Delivery()]
         self.last_delivery_timers = np.Inf
+        self.rng = rng
 
     def reset(self):
         self.delivery_schedule = []
@@ -187,18 +198,18 @@ class Outpoints:
             delivery.update_timer(max(0, max(1, steps)))
 
     def create_order(self, type: str) -> dict:
-        num_boxes = random.randrange(self.min_num_boxes, self.max_num_boxes + 1)
-        return Delivery(type=type, mean=self.type_information[type]["deliver"]["lambda"], num_boxes=num_boxes)
+        num_boxes = self.rng[0].integers(self.min_num_boxes, self.max_num_boxes + 1)
+        return Delivery(type=type, mean=self.type_information[type]["deliver"]["lambda"], num_boxes=num_boxes, rng=self.rng)
         # return {"type": type, "timer": timer, "num_boxes": num_boxes}
 
     def create_delivery(self) -> dict:
         # if self.last_delivery_timers <= np.random.poisson(self.delivery_timer_info["lambda"]):
         prob = 0.2
-        if not np.random.choice([True, False], p=[prob, 1 - prob]):
+        if not self.rng[0].choice([True, False], p=[prob, 1 - prob]):
             return None
         if any(order.ready for order in self.delivery_schedule):
             return None
-        box_type = random.choice(list(self.type_information.keys()))
+        box_type = self.rng[0].choice(list(self.type_information.keys()))
         order = self.create_order(box_type)
         self.delivery_schedule.append(order)
         self.last_delivery_timers = 0
@@ -230,11 +241,13 @@ class Storehouse(gym.Env):
         normalized_state: bool = False,
         path_cost: bool = False,
         path_reward_weight: float = PATH_REWARD_PROPORTION,
+        seed: int = None,  # used for random_start
     ):
         # logging.info(
         #     f"Logging: {logging}, save_episodes: {save_episodes}, max_steps: {max_steps}, conf_name: {conf_name}, augmented: {augment}, random_start: {random_start}, path_cost: {path_cost}, path_weights: {path_reward_weight}"
         # )
         self.signature = {}
+        self.rng = [np.random.default_rng(seed)]
         self.max_id = 1
         self.max_steps = max_steps
         self.max_orders = max_orders
@@ -274,7 +287,7 @@ class Storehouse(gym.Env):
         self.current_return = 0
         self.action_mask = np.zeros(len(list(range(self.action_space.n))))
         if self.random_start:
-            self.random_initial_states = self.create_random_initial_states(NUM_RANDOM_STATES)
+            self.random_initial_states = self.create_random_initial_states(NUM_RANDOM_STATES, seed)
         if save_episodes:
             self.episode_folder = self.logname / "episodes"
             self.episode_folder.mkdir(parents=True, exist_ok=True)
@@ -305,13 +318,14 @@ class Storehouse(gym.Env):
         conf = current_conf["conf"]
         self.type_information = conf["material_types"]
         self.entrypoints = [
-            Entrypoint(position=eval(ii), type_information=self.type_information) for ii in conf["entrypoints"]
+            Entrypoint(position=eval(ii), type_information=self.type_information, rng=self.rng) for ii in conf["entrypoints"]
         ]
         self.outpoints = Outpoints(
             [eval(ii) for ii in conf["outpoints"]],
             type_information=self.type_information,
             delivery_timer=conf["delivery_timer"],
             max_orders=self.max_orders,
+            rng=self.rng,
         )
         self.num_agents = conf["num_agents"]
 
@@ -641,6 +655,7 @@ class Storehouse(gym.Env):
     def set_signature(self, signature: dict) -> None:
         self.reset(force_clean=True)
         self.done = signature["done"]
+        # self.rng = [signature["rng"][0]]
         self.agents = [Agent(agent["pos"], agent["item_id"]) for agent in signature["agents"]]
         self.material = {
             box["id"]: Box(box["id"], box["pos"], box["type"], box["age"], box["ready"], box["timer"])
@@ -648,7 +663,8 @@ class Storehouse(gym.Env):
         }
         self.calculate_restricted_cells()
         self.outpoints.delivery_schedule = [
-            Delivery(el.type, el.mean, el.num_boxes, el.timer, el.ready) for el in signature["outpoints"]["delivery_schedule"]
+            Delivery(type=el.type, mean=el.mean, num_boxes=el.num_boxes, timer=el.timer, ready=el.ready, rng=self.rng)
+            for el in signature["outpoints"]["delivery_schedule"]
         ]
         self.outpoints.last_delivery_timers = signature["outpoints"]["last_delivery_timers"]
         for ep, info in zip(self.entrypoints, signature["entrypoints"]):
@@ -669,6 +685,7 @@ class Storehouse(gym.Env):
         return {
             "max_id": self.max_id,
             "done": self.done,
+            "rng": [self.rng[0]],
             "boxes": [
                 {
                     "id": id_box,
@@ -705,7 +722,8 @@ class Storehouse(gym.Env):
                 "pos": list(self.outpoints.outpoints),
                 "accepted_types": list(set(self.get_ready_to_consume_types())),
                 "delivery_schedule": [
-                    Delivery(el.type, el.mean, el.num_boxes, el.timer, el.ready) for el in self.outpoints.delivery_schedule
+                    Delivery(type=el.type, mean=el.mean, num_boxes=el.num_boxes, timer=el.timer, ready=el.ready, rng=self.rng)
+                    for el in self.outpoints.delivery_schedule
                 ],
                 "last_delivery_timers": self.outpoints.last_delivery_timers,
             },
@@ -717,17 +735,16 @@ class Storehouse(gym.Env):
         self.episode.append(
             {
                 "step": action,
+                "num_actions": state["num_actions"],
                 "reward": reward,
                 "cum_reward": self.current_return,
                 "path": self.path,
                 "state": {
-                    key: value
-                    if key not in ["entrypoints", "outpoints"]
-                    else {"pos": value["pos"], "accepted_types": value["accepted_types"]}
-                    if key == "outpoints"
-                    else {"pos": [pos["pos"] for pos in value]}
-                    for key, value in state.items()
-                    if key not in ["material", "agents", "done", "max_id"]
+                    "agents": state["agents"],
+                    "outpoints": {"pos": state["outpoints"]["pos"], "accepted_types": state["outpoints"]["accepted_types"]},
+                    "entrypoints": {"pos": [ep["pos"] for ep in state["entrypoints"]]},
+                    "boxes": state["boxes"],
+                    "restricted_cell": state["restricted_cell"],
                 },
             }
         )
@@ -904,6 +921,7 @@ class Storehouse(gym.Env):
     #     return len(self.material) >= (self.grid.shape[0] - 2) * (self.grid.shape[1] - 2) * max_occupation
 
     def _step(self, action: tuple, render=False) -> list:
+        action = (int(action[0]), int(action[1]))
         self.last_action = self.denorm_action(action)
         self.num_actions += 1
         info = {"Steps": self.num_actions}
@@ -936,7 +954,7 @@ class Storehouse(gym.Env):
         order = self.outpoints.create_delivery()
         if order is not None:
             # TODO: Create load balancer?
-            self.max_id = random.choice(self.entrypoints).create_new_order(order.type, order.num_boxes, self.max_id)
+            self.max_id = self.rng[0].choice(self.entrypoints).create_new_order(order.type, order.num_boxes, self.max_id)
         if self.save_episodes:
             self.save_state_simplified(reward, action)
         if render:
@@ -1027,8 +1045,8 @@ class Storehouse(gym.Env):
         box = Box(
             id=self.max_id,
             position=position,
-            type=type or random.choice(list(self.type_information.keys())),
-            age=age or random.choice(range(1, 100)),
+            type=type or self.rng[0].choice(list(self.type_information.keys())),
+            age=age or self.rng[0].choice(range(1, 100)),
         )
 
         self.max_id += 1
@@ -1038,9 +1056,9 @@ class Storehouse(gym.Env):
         def decomposition(i):
             while i > 0:
                 try:
-                    n = random.randint(MIN_NUM_BOXES, min(i, MAX_NUM_BOXES))
+                    n = self.rng[0].integers(MIN_NUM_BOXES, min(i, MAX_NUM_BOXES) + 1)
                 except ValueError:
-                    n = random.randint(1, min(i, MAX_NUM_BOXES))
+                    n = self.rng[0].integers(1, min(i, MAX_NUM_BOXES) + 1)
                 yield n
                 i -= n
 
@@ -1049,10 +1067,11 @@ class Storehouse(gym.Env):
             num_boxes_distribution = decomposition(num_boxes_type)
             for num_boxes in num_boxes_distribution:
                 self.outpoints.delivery_schedule.append(
-                    Delivery(type=type, mean=info["deliver"]["lambda"], num_boxes=num_boxes)
+                    Delivery(type=type, mean=info["deliver"]["lambda"], num_boxes=num_boxes, rng=self.rng)
                 )
 
-    def create_random_initial_states(self, num_states) -> list:
+    def create_random_initial_states(self, num_states, seed=None) -> list:
+        self.rng[0] = np.random.default_rng(seed)
         states = []
         print("Creating random states...")
         t0 = time()
@@ -1069,6 +1088,7 @@ class Storehouse(gym.Env):
     def reset(self, render=False, force_clean=False) -> list:
         global EPISODE
         EPISODE += 1
+        self.max_id = 1
         random_flag = self.random_start
         self.signature = {}
         self.restricted_cells = []
@@ -1083,7 +1103,7 @@ class Storehouse(gym.Env):
             entrypoint.reset()
 
         if random_flag and not force_clean:
-            self.set_signature(np.random.choice(self.random_initial_states))
+            self.set_signature(self.rng[0].choice(self.random_initial_states))
         else:
             self.agents = [Agent(initial_position=(3, 3)) for _ in range(self.num_agents)]
         self.initialize_graph(self.grid.shape)
@@ -1106,7 +1126,7 @@ class Storehouse(gym.Env):
             Agent(
                 # (random.choice(range(1, self.grid.shape[0] - 1)), random.choice(range(1, self.grid.shape[1] - 1))),
                 (0, 1),  # To ensure that the agent doesn't start trapped
-                got_item=random.choice([0, self.max_id]),  # If the agent has an item, it will be of ID = 1
+                got_item=self.rng[0].choice([0, self.max_id]),  # If the agent has an item, it will be of ID = 1
             )
             for _ in range(self.num_agents)
         ]
@@ -1115,7 +1135,7 @@ class Storehouse(gym.Env):
         for row, col in itertools.product(range(1, self.grid.shape[0] - 1), range(1, self.grid.shape[1] - 1)):
             if (row, col) == self.agents[0].position:
                 continue
-            if random.random() < box_probability:
+            if self.rng[0].random() < box_probability:
                 max_id = self.max_id
                 self.material[max_id] = self.create_random_box((row, col))
         for box in list(self.material.values()):  # Introduce these boxes in the grid object
@@ -1215,13 +1235,14 @@ class Storehouse(gym.Env):
     def seed(self, seed: int = ...) -> list:
         self.observation_space.seed(seed)
         self.action_space.seed(seed)
+        self.rng[0] = np.random.default_rng(seed)
         return [seed]
 
 
 if __name__ == "__main__":
     from time import sleep
 
-    env = Storehouse(random_start=True)
+    env = Storehouse(random_start=True, save_episodes=True)
     n_a = env.action_space.n
     for _ in range(10):
         env.reset(1)
