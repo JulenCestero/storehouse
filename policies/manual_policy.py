@@ -1,5 +1,6 @@
 import copy
 import operator
+import pprint
 from time import sleep
 
 import click
@@ -56,7 +57,7 @@ def deliver_from_entrypoints(env: Storehouse, available_types: list, entrypoints
         for ep in entrypoints_with_items
         if ep.material_queue[0]["material"].type in available_types
     ]
-    da_box = np.random.choice(boxes) if len(boxes) > 1 else boxes[0]
+    da_box = boxes[0]
     state, reward, done, info = env._step(da_box.position)
     if VISUAL:
         print(f"General action: deliver from entrypoint \nAction: {da_box.position}\nReward: {reward}\n{info}")
@@ -266,12 +267,13 @@ def filter_age_grid(age_grid: np.array, ready_boxes: list) -> np.array:
 def get_oldest_box(age_grid: np.array, ready_boxes: list) -> tuple:
     grid = filter_age_grid(age_grid, ready_boxes)
     oldest_boxes = get_max_position(grid)
-    return oldest_boxes[np.random.choice(len(oldest_boxes))]
+    return oldest_boxes[0]
 
 
 def render(env: Storehouse, general_action: str, action: tuple, reward: float, info: dict):
     if VISUAL:
-        print(f"General action: {general_action}\nAction: {action}\nReward: {reward}\n{info}")
+        pp = pprint.PrettyPrinter(depth=4, sort_dicts=False)
+        pp.pprint({"General action": general_action, "Action": action, "Reward": reward, "Info": info})
         env.render()
 
 
@@ -292,8 +294,8 @@ def deliver_box(outpoint_position):
     return outpoint_position
 
 
-def take_item_from_ep(ep: list) -> None:
-    return ep[np.random.choice(len(ep))]
+def take_item_from_ep(ep: list) -> int:
+    return ep[0]  # Random choice of eps? or take ep with oldest boxes
 
 
 # def get_agent_position(grid: np.array) -> tuple:
@@ -429,12 +431,23 @@ def ehp(env: Storehouse, state: np.array, verbose=False):
 @click.option("-m", "--max_steps", default=100)
 @click.option("-v", "--visualize", default=0)
 @click.option("-t", "--timesteps", default=STEPS)
-@click.option("-s", "--save_episodes", default=False)
+@click.option("-se", "--save_episodes", default=False, type=int)
 @click.option("-pc", "--path_cost", default=False)
 @click.option("-r", "--random_Start", default=False)
 @click.option("-w", "--path_reward_weight", default=0.5)
+@click.option("-s", "--seed", default=None, type=int)
 def main(
-    log_folder, policy, conf_name, max_steps, visualize, timesteps, save_episodes, path_cost, random_start, path_reward_weight
+    log_folder,
+    policy,
+    conf_name,
+    max_steps,
+    visualize,
+    timesteps,
+    save_episodes,
+    path_cost,
+    random_start,
+    path_reward_weight,
+    seed,
 ):
     global VISUAL
     global SLEEP_TIME
@@ -451,8 +464,8 @@ def main(
         path_cost=int(path_cost),
         random_start=int(random_start),
         path_reward_weight=path_reward_weight,
+        seed=seed,
     )
-
     s = env.reset(VISUAL)
     cum_reward = 0
     if not VISUAL:
@@ -468,9 +481,6 @@ def main(
             if r == -1:
                 prueba = True
                 print(prueba)
-            # import pdb
-
-            # pdb.set_trace()
             cum_reward += r
         else:
             raise NotImplementedError
