@@ -486,7 +486,7 @@ def main(
             raise NotImplementedError
         if not VISUAL:
             pbar.update(1)
-    print(f"Finish! Results saved in {log_folder}.\nMean score: {cum_reward / timesteps * int(max_steps)}")
+    print(f"Finish! Results saved in {log_folder}.\nMean score: {cum_reward}")
 
 
 if __name__ == "__main__":
