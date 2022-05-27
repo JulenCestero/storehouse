@@ -493,13 +493,18 @@ class Storehouse(gym.Env):
 
     def delivery_reward(self, box):
         min_rew = -0.5
-        oldest_box = max(
-            [material for material in self.material.values() if material.type == box.type]
-            + [ep.ready_material[0] for ep in self.entrypoints if ep.ready_material],
-            key=operator.attrgetter("age"),
-        )
         age_factor = self.get_age_factor(box.age)
         if self.log_flag:
+            oldest_box = max(
+                [material for material in self.material.values() if material.type == box.type]
+                + [
+                    ep.ready_material[0]
+                    for ep in self.entrypoints
+                    if ep.ready_material
+                    if ep.ready_material[0].type == box.type and self.path[0] != ep.position
+                ],
+                key=operator.attrgetter("age"),
+            )
             self.score.delivered_boxes += 1
             if box.id != oldest_box.id:
                 self.score.non_optimal_material += 1
