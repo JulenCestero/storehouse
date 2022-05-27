@@ -64,7 +64,7 @@ class Score:
 
 
 class Box:
-    def __init__(self, id: int, position: tuple, type: str = "A", age: int = 0, ready: bool = False, timer: int = 0):
+    def __init__(self, id: int, position: tuple, type: str = "A", age: int = 1, ready: bool = False, timer: int = 0):
         self.id = id
         self.type = type
         self.age = age
@@ -302,7 +302,7 @@ class Storehouse(gym.Env):
             self.metrics_log = f"{str(self.logname / self.logname.name)}_metrics.csv"
             with open(self.metrics_log, "a") as f:
                 f.write(
-                    "Delivered Boxes,Filled orders,Score,Steps,Ultra negative achieved,Mean box ages,Cueles,time,max_id,Total orders,Seed\n"
+                    "Delivered Boxes,Filled orders,Score,Steps,Ultra negative achieved,Mean box ages,FIFO violation,time,max_id,Total orders,Seed\n"
                 )
             # self.actions_log = open(str(self.logname) + "_actions.csv", "w")
             # self.actions_log.write("")
@@ -487,18 +487,20 @@ class Storehouse(gym.Env):
     def get_age_factor(age):
         """
         Age bounded within [0, 500]. Returns the percentage of the age factor [0, 1]. Linear (for now)
+        [UPDATE/FIX] Added '1 - ...' to give more weight (therefore, worse rw) to newer items, instead of older items
         """
-        return min(max(age, 0), 500) / 500
+        return (1 - min(max(abs(age), 0), 500) / 500) ** 2 + (min(max(abs(age), 0), 500) / 500) ** 2
 
     def delivery_reward(self, box):
         min_rew = -0.5
+        oldest_box = max(
+            [material for material in self.material.values() if material.type == box.type]
+            + [ep.ready_material[0] for ep in self.entrypoints if ep.ready_material],
+            key=operator.attrgetter("age"),
+        )
         age_factor = self.get_age_factor(box.age)
         if self.log_flag:
             self.score.delivered_boxes += 1
-            oldest_box = max(
-                (material for material in self.material.values() if material.type == box.type),
-                key=operator.attrgetter("age"),
-            )
             if box.id != oldest_box.id:
                 self.score.non_optimal_material += 1
         return min_rew * age_factor
@@ -797,6 +799,10 @@ class Storehouse(gym.Env):
         for box in self.material.values():
             # box_grid[box.position] = self.normalize_type(box.type)
             age_grid[box.position] = self.normalize_age(box.age)
+        for ep in self.entrypoints:
+            if ep.ready_material:
+                oldest_box = max(ep.ready_material, key=operator.attrgetter("age"))
+                age_grid[ep.position] = self.normalize_age(oldest_box.age)
         return age_grid
 
     def construct_box_grid(self, box_grid):
@@ -939,10 +945,10 @@ class Storehouse(gym.Env):
         info = {"Steps": self.num_actions}
         agent = self.agents[0]  # Assuming 1 agent
         # Done conditions
-        if not len(self.available_actions):  # If storehouse full
-            if self.log_flag:
-                self.score.ultra_negative_achieved = True
-            self.done = True
+        # if not len(self.available_actions):  # If storehouse full
+        #     if self.log_flag:
+        #         self.score.ultra_negative_achieved = True
+        #     self.done = True
         if self.num_actions >= self.max_steps:
             self.done = True
             reward = 0
