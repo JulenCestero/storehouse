@@ -267,17 +267,17 @@ def get_ready_boxes_in_grid(s: np.array, ready_types: set, num_types: int) -> li
     return [pos for pos, box in available_boxes.items() if box in ready_types]
 
 
-def filter_age_grid(age_grid: np.array, ready_boxes: list) -> np.array:
+def filter_age_grid(age_grid: np.array, ready_boxes: list, entrypoints, outpoints) -> np.array:
     grid = age_grid
     mask = np.zeros(grid.shape)
     for box in ready_boxes:
-        if check_reachable(grid, (1, 0), box):
+        if check_reachable(grid, (1, 0), box, entrypoints, outpoints):
             mask[box] = 1
     return np.multiply(grid, mask)
 
 
-def get_oldest_box(age_grid: np.array, ready_boxes: list) -> tuple:
-    grid = filter_age_grid(age_grid, ready_boxes)
+def get_oldest_box(age_grid: np.array, ready_boxes: list, entrypoints, outpoints) -> tuple:
+    grid = filter_age_grid(age_grid, ready_boxes, entrypoints, outpoints)
     oldest_boxes = get_max_position(grid)
     return oldest_boxes[0]
 
@@ -297,9 +297,9 @@ def check_reset(env, done) -> np.array:
     return None
 
 
-def take_item_from_grid(state, ready_boxes) -> np.array:
+def take_item_from_grid(state, ready_boxes, entrypoints, outpoints) -> np.array:
     age_grid = state[1]
-    return get_oldest_box(age_grid, ready_boxes)
+    return get_oldest_box(age_grid, ready_boxes, entrypoints, outpoints)
 
 
 def deliver_box(outpoint_position):
@@ -310,26 +310,33 @@ def take_item_from_ep(ep: list) -> int:  # Return action
     return max(ep, key=operator.attrgetter("age")).pos
 
 
-def deposit_item_in_grid(state: np.array) -> np.array:
+def deposit_item_in_grid(state: np.array, entrypoints, outpoints) -> np.array:
     age_grid = state[1]
     agent_grid = state[2]
-    target_cell = find_target_cell(age_grid)
-    return None if target_cell is None else target_cell
+    target_cell = find_target_cell(age_grid, entrypoints, outpoints)
+    return (4, 0) if target_cell is None else target_cell
 
 
 def idle():
     return (0, 1)
 
 
-def prepare_grid(matrix: np.array, start: tuple, end: tuple) -> Grid:
-    prepared_matrix = matrix
+def prepare_grid(matrix: np.array, start: tuple, end: tuple, whitelist: list = []) -> Grid:
+    prepared_matrix = np.array(matrix)
     prepared_matrix[start] = 0
     prepared_matrix[end] = 0
+    for cell in whitelist:
+        prepared_matrix[cell] = 0
     return Grid(matrix=np.negative(prepared_matrix) + 1)
 
 
-def check_reachable(matrix: np.array, start_cell: tuple, end_cell: tuple) -> bool:
-    grid = prepare_grid(copy.deepcopy(matrix), start_cell, end_cell)
+def check_reachable(matrix: np.array, start_cell: tuple, end_cell: tuple, entrypoints: list, outpoints: list) -> bool:
+    grid = prepare_grid(
+        copy.deepcopy(matrix),
+        start_cell,
+        end_cell,
+        whitelist=entrypoints + outpoints,
+    )
     start = grid.node(*reversed(start_cell))
     end = grid.node(*reversed(end_cell))
     finder = AStarFinder(diagonal_movement=DiagonalMovement.never)
@@ -337,12 +344,16 @@ def check_reachable(matrix: np.array, start_cell: tuple, end_cell: tuple) -> boo
     return len(path)
 
 
-def find_target_cell(grid: np.array) -> tuple:  # TODO: Change to  pathfinding
+def find_target_cell(
+    grid: np.array,
+    entrypoints,
+    outpoints,
+) -> tuple:  # TODO: Change to  pathfinding
     target_cell = None
     for ii in range(1, grid.shape[0] - 1):
         for jj in range(1, grid.shape[1] - 1):
             if grid[ii][jj] == 0:
-                if not check_reachable(grid, (1, 0), (ii, jj)):
+                if not check_reachable(grid, (1, 0), (ii, jj), entrypoints, outpoints):
                     continue
                 target_cell = (ii, jj)
                 break
@@ -375,20 +386,31 @@ def drop_box(
     state: np.array,
     agent_item_type: list,
     ready_to_consume_types: list,
-    outpoint_positions: tuple,
+    outpoint_positions: list,
+    entrypoint_positions: list,
     verbose=False,
 ) -> np.array:
     if all(item_type not in ready_to_consume_types for item_type in agent_item_type if len(ready_to_consume_types)):
-        return (deposit_item_in_grid(state), "deposit item in grid") if verbose else deposit_item_in_grid(state)
-    outpoint_position = get_nearest_outpoint(state[2], state[1], outpoint_positions)
+        return (
+            (deposit_item_in_grid(state, entrypoint_positions, outpoint_positions), "deposit item in grid")
+            if verbose
+            else deposit_item_in_grid(state, entrypoint_positions, outpoint_positions)
+        )
+    outpoint_position = get_nearest_outpoint(state[2], state[1], outpoint_positions, entrypoint_positions)
     return (deliver_box(outpoint_position), "deliver box") if verbose else deliver_box(outpoint_position)
 
 
 def take_box(
-    state: np.array, ready_to_consume_types: list, entrypoints_with_items: list, num_types: int, verbose=False
+    state: np.array,
+    ready_to_consume_types: list,
+    entrypoints_with_items: list,
+    num_types: int,
+    entrypoints,
+    outpoints,
+    verbose=False,
 ) -> np.array:
     if len(ready_boxes := get_ready_boxes_in_grid(state, ready_to_consume_types, num_types)):
-        action = take_item_from_grid(state, ready_boxes)
+        action = take_item_from_grid(state, ready_boxes, entrypoints, outpoints)
         return (action, "take item from grid") if verbose else action
     elif len(entrypoints_with_items):
         action = take_item_from_ep(entrypoints_with_items)
@@ -404,15 +426,15 @@ def act(env: Storehouse, action: tuple, act_verbose: str = "") -> tuple:
     else:
         done = True
         reward = 0
-    s = check_reset(env, done)
-    state = state if s is None else s
+        state = env.get_state()
+        info = {}
     sleep(SLEEP_TIME)
-    return state, reward
+    return state, reward, done, info
 
 
-def get_nearest_outpoint(agent_grid: np.array, box_grid, outpoints: list):
+def get_nearest_outpoint(agent_grid: np.array, box_grid, outpoints: list, entrypoints):
     agent_position = get_max_position(agent_grid)[0]
-    out_score = {pos: check_reachable(box_grid, agent_position, pos) for pos in outpoints}
+    out_score = {pos: check_reachable(box_grid, agent_position, pos, entrypoints, outpoints) for pos in outpoints}
     return min(out_score, key=out_score.get)
 
 
@@ -427,15 +449,25 @@ def ehp(env: Storehouse, state: np.array, verbose=False):
     # Static information
     outpoint_positions = env.outpoints.outpoints
     num_types = len(env.type_information)
-    entrypoint_position = [ep.position for ep in env.entrypoints]
+    entrypoint_positions = [ep.position for ep in env.entrypoints]
     ####
     ready_to_consume_types = get_ready_to_consume_items_from_state(state, outpoint_positions[0], num_types)
-    entrypoints_with_items = get_ep_with_items_from_state(state, entrypoint_position, num_types)
+    entrypoints_with_items = get_ep_with_items_from_state(state, entrypoint_positions, num_types)
     agent_item_type = get_agent_item_type(state, num_types)
     if len(agent_item_type):
-        return drop_box(state, agent_item_type, ready_to_consume_types, outpoint_positions, verbose)
+        return drop_box(
+            state, agent_item_type, ready_to_consume_types, outpoint_positions, entrypoint_positions, verbose=verbose
+        )
     else:
-        return take_box(state, ready_to_consume_types, entrypoints_with_items, num_types, verbose)
+        return take_box(
+            state,
+            ready_to_consume_types,
+            entrypoints_with_items,
+            num_types,
+            entrypoint_positions,
+            outpoint_positions,
+            verbose=verbose,
+        )
 
 
 @click.command()
@@ -481,7 +513,8 @@ def main(
         seed=seed,
     )
     s = env.reset(VISUAL)
-    cum_reward = 0
+    cum_reward = []
+    cum_deliveries = []
     if not VISUAL:
         pbar = tqdm(total=timesteps)
     for _ in range(timesteps):
@@ -491,16 +524,20 @@ def main(
             initial_human_policy(env, s)
         elif policy == "ehp":
             action, act_info = ehp(env, s, verbose=True)
-            s, r = act(env, action, act_info)
-            if r == -1:
-                prueba = True
-                print(prueba)
-            cum_reward += r
+            s, r, done, info = act(env, action, act_info)
+            if done:
+                cum_reward.append(env.current_return)
+                cum_deliveries.append(env.score.delivered_boxes)
+                s = env.reset()
+                if VISUAL:
+                    print("######################")
         else:
             raise NotImplementedError
         if not VISUAL:
             pbar.update(1)
-    print(f"Finish! Results saved in {log_folder}.\nMean score: {cum_reward}")
+    print(
+        f"Finish! Results saved in {log_folder}.\nMean score: {np.mean(cum_reward)}. Delivered boxes: {np.mean(cum_deliveries)}"
+    )
 
 
 if __name__ == "__main__":

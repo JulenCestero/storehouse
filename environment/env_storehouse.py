@@ -20,7 +20,7 @@ from scipy.stats import poisson
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 
-CONF_NAME = "6x6"
+CONF_NAME = "6x6fast"
 MAX_ORDERS = 3
 MAX_NUM_BOXES = 6
 MIN_NUM_BOXES = 2
@@ -64,32 +64,21 @@ class Score:
 
 
 class Box:
-    def __init__(self, id: int, position: tuple, type: str = "A", age: int = 1, ready: bool = False, timer: int = 0):
+    def __init__(self, id: int, position: tuple, type: str = "A", age: int = 1):
         self.id = id
         self.type = type
         self.age = age
-        self.timer = timer
-        self.ready = ready
         self.position = position
 
     def update_age(self, num_steps: int = 1):
-        if self.ready:
-            self.age += max(num_steps, 1)
-        else:
-            self.timer += max(num_steps, 1)
+        self.age += max(num_steps, 1)
 
     def __eq__(self, other):
         if isinstance(other, Box):
-            return (
-                self.position == other.position
-                and self.age == other.age
-                and self.id == other.id
-                and self.age == other.age
-                and self.ready == other.ready
-            )
+            return self.position == other.position and self.age == other.age and self.id == other.id and self.age == other.age
 
     def __repr__(self) -> str:
-        return f"Box(type={self.type}, ready={self.ready}, timer={self.timer}, age={self.age})"
+        return f"Box(id={self.id}, type={self.type}, age={self.age})"
 
 
 class Agent:
@@ -109,43 +98,36 @@ class Entrypoint:
         self.type_information = type_information
         self.position = position
         self.material_queue = []  # FIFO
-        self.ready_material = []
 
-    def create_new_order(self, material_type: str, number_of_material: int, max_id: int):
-        for _ in range(number_of_material):
-            self.material_queue.append(Box(max_id, self.position, material_type))
+    def create_new_material(self, max_id: int):
+        box_type = self.rng[0].choice(list(self.type_information.keys()))
+        prob = self.type_information[box_type]["create"]
+        if self.rng[0].choice([True, False], p=[prob, 1 - prob]):
+            material = Box(max_id, self.position, box_type)
+            self.material_queue.append(material)
             max_id += 1
         return max_id
 
     def get_item(self) -> Box:  # sourcery skip: raise-specific-error
         try:
-            return self.ready_material.pop(0)
+            return self.material_queue.pop(0)
         except IndexError as ex:
             logging.error(f"Error at get_item in Entrypoint {self.position}")
             raise IndexError from ex
 
-    def update_entrypoint(self, steps: int = 1):
-        prob = 0.15
-        for material in self.ready_material:
+    def update_entrypoint(self, max_id, steps: int = 1):
+        for material in self.material_queue:
             material.update_age(max(1, steps))
-        for ii, material in enumerate(self.material_queue):
-            material.update_age(max(1, steps))
-            # prob = poisson.cdf(material.timer, mean) # mean depends on material type
-            if self.rng[0].choice([True, False], p=[prob, 1 - prob]):
-                material.ready = True
-                self.ready_material.append(material)
-                del self.material_queue[ii]
-        return self.ready_material[0].id if self.ready_material else 0
+        return self.create_new_material(max_id)
 
     def reset(self):
         self.material_queue = []
-        self.ready_material = []
 
 
 class Delivery:
     def __init__(
         self,
-        mean: int,
+        prob: int,
         num_boxes: int,
         type: str,
         rng: list,
@@ -153,7 +135,7 @@ class Delivery:
         ready: bool = False,
     ):
         self.type = type
-        self.mean = mean
+        self.prob = prob
         self.num_boxes = num_boxes
         self.timer = timer
         self.ready = ready
@@ -162,19 +144,21 @@ class Delivery:
     def update_timer(self, step: int = 1):
         self.timer += step
         if not self.ready:
-            # prob = poisson.cdf(self.timer, self.mean)
-            prob = 0.02
+            # prob = poisson.cdf(self.timer, self.prob)
+            prob = self.prob
             if self.rng[0].choice([True, False], p=[prob, 1 - prob]):
                 self.ready = True
 
     def __repr__(self) -> str:
-        return f"Delivery(type={self.type}, num_boxes={self.num_boxes}, timer={self.timer}, ready={self.ready})"
+        return (
+            f"Delivery(type={self.type}, num_boxes={self.num_boxes}, timer={self.timer}, ready={self.ready}, prob={self.prob})"
+        )
 
     def __eq__(self, other):
         if isinstance(other, Delivery):
             return (
                 self.type == other.type
-                and self.mean == other.mean
+                and self.prob == other.prob
                 and self.num_boxes == other.num_boxes
                 and self.timer == other.timer
                 and self.ready == other.ready
@@ -185,7 +169,7 @@ class Outpoints:
     def __init__(self, outpoints: list, type_information: dict, delivery_timer: dict, max_orders: int, rng: list):
         self.outpoints = outpoints  # Position
         self.type_information = type_information
-        self.delivery_timer_info = delivery_timer
+        self.delivery_prob = delivery_timer
         self.max_orders = max_orders
         self.max_num_boxes = MAX_NUM_BOXES
         self.min_num_boxes = MIN_NUM_BOXES
@@ -204,16 +188,13 @@ class Outpoints:
 
     def create_order(self, type: str) -> dict:
         num_boxes = self.rng[0].integers(self.min_num_boxes, self.max_num_boxes + 1)
-        return Delivery(type=type, mean=self.type_information[type]["deliver"]["lambda"], num_boxes=num_boxes, rng=self.rng)
+        return Delivery(type=type, prob=self.type_information[type]["deliver"], num_boxes=num_boxes, rng=self.rng)
         # return {"type": type, "timer": timer, "num_boxes": num_boxes}
 
     def create_delivery(self) -> dict:
-        # if self.last_delivery_timers <= np.random.poisson(self.delivery_timer_info["lambda"]):
-        prob = 0.1
+        prob = self.delivery_prob
         if not self.rng[0].choice([True, False], p=[prob, 1 - prob]):
             return None
-        # if any(order.ready for order in self.delivery_schedule):
-        #     return None
         box_type = self.rng[0].choice(list(self.type_information.keys()))
         order = self.create_order(box_type)
         self.delivery_schedule.append(order)
@@ -373,7 +354,12 @@ class Storehouse(gym.Env):
         """
         Returns the cost of the movement. 0 if end_position is unreachable
         """
-        grid = self.prepare_grid(self.grid, start_position, end_position, [ep.position for ep in self.entrypoints])
+        grid = self.prepare_grid(
+            self.grid,
+            start_position,
+            end_position,
+            whitelist=[ep.position for ep in self.entrypoints] + self.outpoints.outpoints,
+        )
         start = grid.node(*reversed(start_position))
         end = grid.node(*reversed(end_position))
         path, runs = self.finder.find_path(start, end, grid)
@@ -498,10 +484,10 @@ class Storehouse(gym.Env):
             oldest_box = max(
                 [material for material in self.material.values() if material.type == box.type]
                 + [
-                    ep.ready_material[0]
+                    ep.material_queue[0]
                     for ep in self.entrypoints
-                    if ep.ready_material
-                    if ep.ready_material[0].type == box.type and self.path[0] != ep.position
+                    if ep.material_queue
+                    if ep.material_queue[0].type == box.type and self.path[0] != ep.position
                 ],
                 key=operator.attrgetter("age"),
             )
@@ -512,7 +498,7 @@ class Storehouse(gym.Env):
 
     def get_entrypoints_with_items(self):
         try:
-            entrypoints_with_items = [ep for ep in self.entrypoints if len(ep.ready_material) > 0]
+            entrypoints_with_items = [ep for ep in self.entrypoints if len(ep.material_queue) > 0]
         except IndexError:
             entrypoints_with_items = []
         return entrypoints_with_items
@@ -676,23 +662,19 @@ class Storehouse(gym.Env):
         self.done = signature["done"]
         # self.rng = [signature["rng"][0]]
         self.agents = [Agent(agent["pos"], agent["item_id"]) for agent in signature["agents"]]
-        self.material = {
-            box["id"]: Box(box["id"], box["pos"], box["type"], box["age"], box["ready"], box["timer"])
-            for box in signature["boxes"]
-        }
+        self.material = {box["id"]: Box(box["id"], box["pos"], box["type"], box["age"]) for box in signature["boxes"]}
         self.calculate_restricted_cells()
         self.outpoints.delivery_schedule = [
-            Delivery(type=el.type, mean=el.mean, num_boxes=el.num_boxes, timer=el.timer, ready=el.ready, rng=self.rng)
+            Delivery(type=el.type, prob=el.prob, num_boxes=el.num_boxes, timer=el.timer, ready=el.ready, rng=self.rng)
             for el in signature["outpoints"]["delivery_schedule"]
         ]
         self.outpoints.last_delivery_timers = signature["outpoints"]["last_delivery_timers"]
         for ep, info in zip(self.entrypoints, signature["entrypoints"]):
-            ep.material_queue = [Box(el.id, el.position, el.type, el.age, el.ready, el.timer) for el in info["material_queue"]]
-            ep.ready_material = [Box(el.id, el.position, el.type, el.age, el.ready, el.timer) for el in info["ready_material"]]
+            ep.material_queue = [Box(el.id, el.position, el.type, el.age) for el in info["material_queue"]]
             ep.position = info["pos"]
         self.num_actions = signature["num_actions"]
         for box_id, box in list(self.material.items()) + [
-            (queue[0].id, queue[0]) for queue in [ep.ready_material for ep in self.entrypoints if len(ep.ready_material) > 0]
+            (queue[0].id, queue[0]) for queue in [ep.material_queue for ep in self.entrypoints if len(ep.material_queue) > 0]
         ]:
             self.grid[box.position] = box_id
         if self.agents[0].got_item:
@@ -711,8 +693,6 @@ class Storehouse(gym.Env):
                     "pos": box.position,
                     "age": box.age,
                     "type": box.type,
-                    "ready": box.ready,
-                    "timer": box.timer,
                 }
                 for id_box, box in self.material.items()
             ],
@@ -728,12 +708,7 @@ class Storehouse(gym.Env):
             "entrypoints": [
                 {
                     "pos": ep.position,
-                    "material_queue": [
-                        Box(el.id, el.position, el.type, el.age, el.ready, el.timer) for el in ep.material_queue
-                    ],
-                    "ready_material": [
-                        Box(el.id, el.position, el.type, el.age, el.ready, el.timer) for el in ep.ready_material
-                    ],
+                    "material_queue": [Box(el.id, el.position, el.type, el.age) for el in ep.material_queue],
                 }
                 for ep in self.entrypoints
             ],
@@ -741,7 +716,7 @@ class Storehouse(gym.Env):
                 "pos": list(self.outpoints.outpoints),
                 "accepted_types": list(set(self.get_ready_to_consume_types())),
                 "delivery_schedule": [
-                    Delivery(type=el.type, mean=el.mean, num_boxes=el.num_boxes, timer=el.timer, ready=el.ready, rng=self.rng)
+                    Delivery(type=el.type, prob=el.prob, num_boxes=el.num_boxes, timer=el.timer, ready=el.ready, rng=self.rng)
                     for el in self.outpoints.delivery_schedule
                 ],
                 "last_delivery_timers": self.outpoints.last_delivery_timers,
@@ -805,13 +780,13 @@ class Storehouse(gym.Env):
             # box_grid[box.position] = self.normalize_type(box.type)
             age_grid[box.position] = self.normalize_age(box.age)
         for ep in self.entrypoints:
-            if ep.ready_material:
-                oldest_box = max(ep.ready_material, key=operator.attrgetter("age"))
+            if ep.material_queue:
+                oldest_box = ep.material_queue[0]
                 age_grid[ep.position] = self.normalize_age(oldest_box.age)
         return age_grid
 
     def construct_box_grid(self, box_grid):
-        for box in list(self.material.values()) + [ep.ready_material[0] for ep in self.get_entrypoints_with_items()]:
+        for box in list(self.material.values()) + [ep.material_queue[0] for ep in self.get_entrypoints_with_items()]:
             box_grid[box.position] = self.normalize_type(box.type)
         for agent in self.agents:
             if agent.position in [ep.position for ep in self.entrypoints] and agent.got_item:
@@ -864,12 +839,13 @@ class Storehouse(gym.Env):
                     and self.material[ag.got_item].type
                     not in [material.type for material in self.outpoints.delivery_schedule if material.ready]
                 )  #  Go to not ready outpoints
-                assert movement not in [box.position for box in self.material.values()]
-                assert not (
-                    movement not in [entrypoint.position for entrypoint in self.entrypoints]
-                    and movement not in self.outpoints.outpoints
-                    and (movement[0] in (0, self.grid.shape[0] - 1) or movement[1] in (0, self.grid.shape[1] - 1))
-                )  # Move outer ring
+                # assert movement not in [box.position for box in self.material.values()]
+                assert self.grid[movement] == 0
+                # assert not (
+                #     movement not in [entrypoint.position for entrypoint in self.entrypoints]
+                #     and movement not in self.outpoints.outpoints
+                #     and (movement[0] in (0, self.grid.shape[0] - 1) or movement[1] in (0, self.grid.shape[1] - 1))
+                # )  # Move outer ring
             else:
                 assert movement not in self.outpoints.outpoints
             assert self.find_path_cost(ag.position, movement) >= 0
@@ -917,11 +893,18 @@ class Storehouse(gym.Env):
             ag.position = movement
             return 3
         ag.position = movement
+        if (
+            movement not in [entrypoint.position for entrypoint in self.entrypoints]
+            and movement not in self.outpoints.outpoints
+            and (movement[0] in (0, self.grid.shape[0] - 1) or movement[1] in (0, self.grid.shape[1] - 1))
+        ):  # Move to outern ring
+            self.material[ag.got_item].position = movement
+            self.calculate_restricted_cells()
+            return 3
         self.grid[ag.position] = ag.got_item
         self.material[ag.got_item].position = movement
         ag.got_item = 0
         self.calculate_restricted_cells()
-        # self.update_restricted_cells(ag)  # Update the restricted cell list with the new actions
         return 2
 
     def take_item(self, ag, movement):
@@ -976,32 +959,19 @@ class Storehouse(gym.Env):
         self.outpoints_consume()
         self.update_timers()
         order = self.outpoints.create_delivery()
-        if order is not None:
-            # TODO: Create load balancer?
-            self.max_id = self.rng[0].choice(self.entrypoints).create_new_order(order.type, order.num_boxes, self.max_id)
-            if self.log_flag:
-                self.score.total_orders += 1
+        if order is not None and self.log_flag:
+            self.score.total_orders += 1
         if self.save_episodes:
             self.save_state_simplified(reward, action)
         if render:
             self.render()
         return self.return_result(reward, info)
 
-    # def __get_idle_time(self):
-
-    #     timers = [order.timer for order in self.outpoints.delivery_schedule] + [
-    #         ep.material_queue[0]["timer"] for ep in self.entrypoints if len(ep.material_queue) > 0
-    #     ]
-    #     try:
-    #         return min(timers)
-    #     except ValueError as ex:
-    #         return 1
-
     def detect_idle(self) -> bool:
         A = bool(self.agents[0].got_item)
         O = bool(len(self.delivery_schedule) > 0 and self.delivery_schedule[0].ready)
         S = bool(len(self.material))
-        E = len(ep for ep in self.entrypoints if len(ep.ready_material) > 0)
+        E = len(ep for ep in self.entrypoints if len(ep.material_queue) > 0)
         return (not A and not E and not O) or (not A and not E and not S)
 
     def update_timers(self):
@@ -1015,7 +985,11 @@ class Storehouse(gym.Env):
             box.update_age(steps)
         self.outpoints.update_timers(steps)
         for entrypoint in self.entrypoints:
-            self.grid[entrypoint.position] = entrypoint.update_entrypoint(steps)
+            try:
+                self.grid[entrypoint.position] = entrypoint.material_queue[0].id
+            except IndexError as ex:
+                self.grid[entrypoint.position] = 0
+            self.max_id = entrypoint.update_entrypoint(max_id=self.max_id, steps=steps)
 
     def act(self, agent, action, info):
         # Movement
@@ -1048,10 +1022,7 @@ class Storehouse(gym.Env):
             info["timer"] = self.score.timer
             info["delivered"] = self.score.delivered_boxes
         for entrypoint in self.entrypoints:
-            info[f"EP{entrypoint.position}"] = {
-                "Ready": list(entrypoint.ready_material),
-                "Preparing": list(entrypoint.material_queue),
-            }
+            info[f"EP{entrypoint.position}"] = list(entrypoint.material_queue)
 
         info["outpoint queue"] = self.outpoints.delivery_schedule
         self.last_info = info
@@ -1096,7 +1067,7 @@ class Storehouse(gym.Env):
             num_boxes_distribution = decomposition(num_boxes_type)
             for num_boxes in num_boxes_distribution:
                 self.outpoints.delivery_schedule.append(
-                    Delivery(type=type, mean=info["deliver"]["lambda"], num_boxes=num_boxes, rng=self.rng)
+                    Delivery(type=type, prob=info["deliver"], num_boxes=num_boxes, rng=self.rng)
                 )
 
     def create_random_initial_states(self, num_states, seed=None) -> list:
@@ -1153,9 +1124,8 @@ class Storehouse(gym.Env):
         box_probability = 0.4  # Magic number
         self.agents = [
             Agent(
-                # (random.choice(range(1, self.grid.shape[0] - 1)), random.choice(range(1, self.grid.shape[1] - 1))),
                 (0, 1),  # To ensure that the agent doesn't start trapped
-                got_item=self.rng[0].choice([0, self.max_id]),  # If the agent has an item, it will be of ID = 1
+                got_item=self.rng[0].choice([0, self.max_id]),
             )
             for _ in range(self.num_agents)
         ]
@@ -1227,7 +1197,7 @@ class Storehouse(gym.Env):
                     encoded_el = " "
                 elif (r, e) in [entrypoint.position for entrypoint in self.entrypoints]:
                     encoded_el = [
-                        self.entrypoints[ii].ready_material[0].type
+                        self.entrypoints[ii].material_queue[0].type
                         for ii in range(len(self.entrypoints))
                         if self.entrypoints[ii].position == (r, e)
                     ][0]
