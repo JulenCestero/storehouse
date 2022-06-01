@@ -65,15 +65,15 @@
       "num_agents": 1,
       "material_types": {
         "A": {
-          "create": 0.4,
-          "deliver": 0.02
+          "create": 0.3,
+          "deliver": 0.025
         },
         "B": {
-          "create": 0.5,
-          "deliver": 0.01
+          "create": 0.35,
+          "deliver": 0.02
         }
       },
-      "delivery_timer": 0.1
+      "delivery_prob": 0.1
     }
   },
   "10x10": {
