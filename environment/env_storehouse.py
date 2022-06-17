@@ -32,7 +32,7 @@ MIN_CNN_LEN = 32
 MIN_SB3_SIZE = 32
 EPISODE = 0
 NUM_RANDOM_STATES = 500
-PATH_REWARD_PROPORTION = 0.5
+PATH_REWARD_PROPORTION = 0.0
 
 
 class Score:
@@ -48,18 +48,24 @@ class Score:
         self.box_ages = []
         self.non_optimal_material = 0
         self.timer = 0
+        self.max_id = 0
+        self.total_orders = 0
+        self.seed = 0
 
     def print_score(self) -> str:
         return (
             f"{self.delivered_boxes}, {self.filled_orders}, {self.clear_run_score}, {self.steps},"
             f"{self.ultra_negative_achieved}, {mean(self.box_ages)},"
             f"{self.non_optimal_material / max(1, self.delivered_boxes) * 100},"
-            f"{self.timer}"
+            f"{self.timer},"
+            f"{self.max_id},"
+            f"{self.total_orders},"
+            f"{self.seed}"
         )
 
 
 class Box:
-    def __init__(self, id: int, position: tuple, type: str = "A", age: int = 0, ready: bool = False, timer: int = 0):
+    def __init__(self, id: int, position: tuple, type: str = "A", age: int = 1, ready: bool = False, timer: int = 0):
         self.id = id
         self.type = type
         self.age = age
@@ -71,7 +77,7 @@ class Box:
         if self.ready:
             self.age += max(num_steps, 1)
         else:
-            self.timer += 1
+            self.timer += max(num_steps, 1)
 
     def __eq__(self, other):
         if isinstance(other, Box):
@@ -158,7 +164,7 @@ class Delivery:
         self.timer += step
         if not self.ready:
             # prob = poisson.cdf(self.timer, self.mean)
-            prob = 0.04
+            prob = 0.02
             if self.rng[0].choice([True, False], p=[prob, 1 - prob]):
                 self.ready = True
 
@@ -204,11 +210,11 @@ class Outpoints:
 
     def create_delivery(self) -> dict:
         # if self.last_delivery_timers <= np.random.poisson(self.delivery_timer_info["lambda"]):
-        prob = 0.2
+        prob = 0.1
         if not self.rng[0].choice([True, False], p=[prob, 1 - prob]):
             return None
-        if any(order.ready for order in self.delivery_schedule):
-            return None
+        # if any(order.ready for order in self.delivery_schedule):
+        #     return None
         box_type = self.rng[0].choice(list(self.type_information.keys()))
         order = self.create_order(box_type)
         self.delivery_schedule.append(order)
@@ -261,6 +267,7 @@ class Storehouse(gym.Env):
         self.normalized_state = normalized_state
         self.feature_number = FEATURE_NUMBER
         self.score = Score()
+        self.original_seed = seed
         self.episode = []
         self.available_actions = []
         self.invalid_actions = []
@@ -295,7 +302,9 @@ class Storehouse(gym.Env):
             self.logname.mkdir(parents=True, exist_ok=True)
             self.metrics_log = f"{str(self.logname / self.logname.name)}_metrics.csv"
             with open(self.metrics_log, "a") as f:
-                f.write("Delivered Boxes,Filled orders,Score,Steps,Ultra negative achieved,Mean box ages,Cueles,time\n")
+                f.write(
+                    "Delivered Boxes,Filled orders,Score,Steps,Ultra negative achieved,Mean box ages,FIFO violation,time,max_id,Total orders,Seed\n"
+                )
             # self.actions_log = open(str(self.logname) + "_actions.csv", "w")
             # self.actions_log.write("")
 
@@ -342,8 +351,10 @@ class Storehouse(gym.Env):
                         logging.info("Material consumed")
                     elif status == 2:
                         logging.info("Order completed")
-                        self.score.filled_orders += 1
-                    self.score.box_ages.append(self.material[self.grid[outpoint]].age)
+                        if self.log_flag:
+                            self.score.filled_orders += 1
+                    if self.log_flag:
+                        self.score.box_ages.append(self.material[self.grid[outpoint]].age)
                     del self.material[self.grid[outpoint]]
                     self.grid[outpoint] = 0
                 except Exception as e:
@@ -477,8 +488,28 @@ class Storehouse(gym.Env):
     def get_age_factor(age):
         """
         Age bounded within [0, 500]. Returns the percentage of the age factor [0, 1]. Linear (for now)
+        [UPDATE/FIX] Added '1 - ...' to give more weight (therefore, worse rw) to newer items, instead of older items
         """
-        return min(max(age, 0), 500) / 500
+        return (1 - min(max(abs(age), 0), 500) / 500) ** 2 + (min(max(abs(age), 0), 500) / 500) ** 2
+
+    def delivery_reward(self, box):
+        min_rew = -0.5
+        age_factor = self.get_age_factor(box.age)
+        if self.log_flag:
+            oldest_box = max(
+                [material for material in self.material.values() if material.type == box.type]
+                + [
+                    ep.ready_material[0]
+                    for ep in self.entrypoints
+                    if ep.ready_material
+                    if ep.ready_material[0].type == box.type and self.path[0] != ep.position
+                ],
+                key=operator.attrgetter("age"),
+            )
+            self.score.delivered_boxes += 1
+            if box.id != oldest_box.id:
+                self.score.non_optimal_material += 1
+        return min_rew * age_factor
 
     def get_entrypoints_with_items(self):
         try:
@@ -515,22 +546,11 @@ class Storehouse(gym.Env):
         # assert weighted_reward <= 0
         return weighted_reward
 
-    def delivery_reward(self, box):
-        min_rew = -0.5
-        oldest_box = max(
-            (material for material in self.material.values() if material.type == box.type),
-            key=operator.attrgetter("age"),
-        )
-
-        age_factor = self.get_age_factor(box.age)
-        if box.id != oldest_box.id:
-            self.score.non_optimal_material += 1
-        self.score.delivered_boxes += 1
-        return min_rew * age_factor
-
     def log(self, action):
         if self.done:
             self.score.box_ages += [box.age for box in self.material.values()]
+            self.score.max_id = self.max_id
+            self.score.seed = self.original_seed
             if not len(self.score.box_ages):
                 self.score.box_ages.append(0)
             with open(self.metrics_log, "a") as f:
@@ -785,6 +805,10 @@ class Storehouse(gym.Env):
         for box in self.material.values():
             # box_grid[box.position] = self.normalize_type(box.type)
             age_grid[box.position] = self.normalize_age(box.age)
+        for ep in self.entrypoints:
+            if ep.ready_material:
+                oldest_box = max(ep.ready_material, key=operator.attrgetter("age"))
+                age_grid[ep.position] = self.normalize_age(oldest_box.age)
         return age_grid
 
     def construct_box_grid(self, box_grid):
@@ -927,9 +951,10 @@ class Storehouse(gym.Env):
         info = {"Steps": self.num_actions}
         agent = self.agents[0]  # Assuming 1 agent
         # Done conditions
-        if not len(self.available_actions):  # If storehouse full
-            self.score.ultra_negative_achieved = True
-            self.done = True
+        # if not len(self.available_actions):  # If storehouse full
+        #     if self.log_flag:
+        #         self.score.ultra_negative_achieved = True
+        #     self.done = True
         if self.num_actions >= self.max_steps:
             self.done = True
             reward = 0
@@ -938,8 +963,8 @@ class Storehouse(gym.Env):
                 self.log(action)
             return self.return_result(reward, info)
         ####
-        self.score.steps += 1
         if self.log_flag:
+            self.score.steps += 1
             self.log(action)
         # Update environment with the agent interaction
         if not self.done:
@@ -955,6 +980,8 @@ class Storehouse(gym.Env):
         if order is not None:
             # TODO: Create load balancer?
             self.max_id = self.rng[0].choice(self.entrypoints).create_new_order(order.type, order.num_boxes, self.max_id)
+            if self.log_flag:
+                self.score.total_orders += 1
         if self.save_episodes:
             self.save_state_simplified(reward, action)
         if render:
@@ -983,7 +1010,8 @@ class Storehouse(gym.Env):
             steps = len(self.path) - 1 if self.path_cost else 1
         else:
             steps = 1
-        self.score.timer += steps
+        if self.log_flag:
+            self.score.timer += steps
         for box in self.material.values():
             box.update_age(steps)
         self.outpoints.update_timers(steps)
@@ -1010,14 +1038,16 @@ class Storehouse(gym.Env):
         else:
             self.invalid_actions = []
         result = self.get_reward(move_status, agent, box)
-        self.score.clear_run_score += result
+        if self.log_flag:
+            self.score.clear_run_score += result
         return result, move_status
 
     def return_result(self, reward, info):
         self.last_r = reward
         self.current_return += reward
-        info["timer"] = self.score.timer
-        info["delivered"] = self.score.delivered_boxes
+        if self.log_flag:
+            info["timer"] = self.score.timer
+            info["delivered"] = self.score.delivered_boxes
         for entrypoint in self.entrypoints:
             info[f"EP{entrypoint.position}"] = {
                 "Ready": list(entrypoint.ready_material),
@@ -1072,6 +1102,7 @@ class Storehouse(gym.Env):
 
     def create_random_initial_states(self, num_states, seed=None) -> list:
         self.rng[0] = np.random.default_rng(seed)
+        self.original_seed = seed
         states = []
         print("Creating random states...")
         t0 = time()
@@ -1112,7 +1143,6 @@ class Storehouse(gym.Env):
         self.score.reset()
         self.num_invalid = 0
         self.number_actions = 0
-        self.current_return = 0
         if not len(self.get_available_actions()):
             return self.reset(render)
         if render:
@@ -1236,6 +1266,7 @@ class Storehouse(gym.Env):
         self.observation_space.seed(seed)
         self.action_space.seed(seed)
         self.rng[0] = np.random.default_rng(seed)
+        self.original_seed = seed
         return [seed]
 
 

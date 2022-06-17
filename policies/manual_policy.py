@@ -211,7 +211,7 @@ def deserialize_out_state(state: int) -> list:
     return list(np.log2(powers).astype(int))
 
 
-def get_rtct_from_state(s: np.array, out_position: list, num_types: int) -> list:
+def get_ready_to_consume_items_from_state(s: np.array, out_position: list, num_types: int) -> list:
     box_grid = s[0]
     outpoint_state = box_grid[out_position]
     if outpoint_state == 0:
@@ -225,33 +225,45 @@ def denormalize_type(encoded_type: int, num_types: int) -> str:
     return int_to_type(int(encoded_type / 255 * num_types) - 1)
 
 
-def get_epwi_from_state(s: np.array, ep_position: list, num_types: int) -> dict:
+class EntrypointBox:
+    def __init__(self, pos, age, type):
+        self.pos = pos
+        self.age = age
+        self.type = type
+
+
+def get_ep_with_items_from_state(s: np.array, ep_position: list, num_types: int) -> dict:
     box_grid = s[0]
+    age_grid = s[1]
     ep_state = {pos: box_grid[pos] for pos in ep_position}
     if not any(ep_state):
         return []
-    return {pos: denormalize_type(ep, num_types) for pos, ep in ep_state.items() if ep}
+    return [EntrypointBox(pos, age_grid[pos], denormalize_type(ep, num_types)) for pos, ep in ep_state.items() if ep]
 
 
-def filter_restricted_boxes(grid: np.array, num_types: int) -> dict:
-    adjacent_cells_delta = [(0, 1), (0, -1), (1, 0), (-1, 0)]
-    boxes = {}
-    for row in range(1, grid.shape[0] - 1):
-        for col in range(1, grid.shape[1] - 1):
-            flag = True
-            for delta in adjacent_cells_delta:
-                adjacent_cell = tuple(map(operator.add, (row, col), delta))
-                if grid[adjacent_cell] == 0:
-                    flag = False
-                    break
-            if not flag and grid[row][col] > 0:  # Not restricted_cell and cell with item
-                boxes[(row, col)] = denormalize_type(grid[row][col], num_types)
-    return boxes  # form {pos: type}
+# def filter_restricted_boxes(grid: np.array, num_types: int) -> dict:
+#     adjacent_cells_delta = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+#     boxes = {}
+#     for row in range(1, grid.shape[0] - 1):
+#         for col in range(1, grid.shape[1] - 1):
+#             flag = True
+#             for delta in adjacent_cells_delta:
+#                 adjacent_cell = tuple(map(operator.add, (row, col), delta))
+#                 if grid[adjacent_cell] == 0:
+#                     flag = False
+#                     break
+#             if not flag and grid[row][col] > 0:  # Not restricted_cell and cell with item
+#                 boxes[(row, col)] = denormalize_type(grid[row][col], num_types)
+#     return boxes  # form {pos: type}
 
 
 def get_ready_boxes_in_grid(s: np.array, ready_types: set, num_types: int) -> list:
     box_grid = s[0]
-    available_boxes = filter_restricted_boxes(box_grid, num_types)
+    available_boxes = {}
+    for ii, row in enumerate(box_grid):
+        for jj, val in enumerate(row):
+            if val > 0:
+                available_boxes[(ii, jj)] = denormalize_type(val, num_types)
     return [pos for pos, box in available_boxes.items() if box in ready_types]
 
 
@@ -273,7 +285,7 @@ def get_oldest_box(age_grid: np.array, ready_boxes: list) -> tuple:
 def render(env: Storehouse, general_action: str, action: tuple, reward: float, info: dict):
     if VISUAL:
         pp = pprint.PrettyPrinter(depth=4, sort_dicts=False)
-        pp.pprint({"General action": general_action, "Action": action, "Reward": reward, "Info": info})
+        pp.pprint({"Info": info, "General action": general_action, "Action": action, "Reward": reward})
         env.render()
 
 
@@ -294,12 +306,8 @@ def deliver_box(outpoint_position):
     return outpoint_position
 
 
-def take_item_from_ep(ep: list) -> int:
-    return ep[0]  # Random choice of eps? or take ep with oldest boxes
-
-
-# def get_agent_position(grid: np.array) -> tuple:
-#     return tuple(el[0] for el in np.where(grid == grid.max()))
+def take_item_from_ep(ep: list) -> int:  # Return action
+    return max(ep, key=operator.attrgetter("age")).pos
 
 
 def deposit_item_in_grid(state: np.array) -> np.array:
@@ -367,24 +375,24 @@ def drop_box(
     state: np.array,
     agent_item_type: list,
     ready_to_consume_types: list,
-    outpoint_position: tuple,
+    outpoint_positions: tuple,
     verbose=False,
 ) -> np.array:
-    if any(item_type in ready_to_consume_types for item_type in agent_item_type if len(ready_to_consume_types)):
-        return (deliver_box(outpoint_position), "deliver box") if verbose else deliver_box(outpoint_position)
-    else:
+    if all(item_type not in ready_to_consume_types for item_type in agent_item_type if len(ready_to_consume_types)):
         return (deposit_item_in_grid(state), "deposit item in grid") if verbose else deposit_item_in_grid(state)
+    outpoint_position = get_nearest_outpoint(state[2], state[1], outpoint_positions)
+    return (deliver_box(outpoint_position), "deliver box") if verbose else deliver_box(outpoint_position)
 
 
 def take_box(
-    state: np.array, ready_to_consume_types: list, entrypoints_with_items: dict, num_types: int, verbose=False
+    state: np.array, ready_to_consume_types: list, entrypoints_with_items: list, num_types: int, verbose=False
 ) -> np.array:
     ready_boxes = get_ready_boxes_in_grid(state, ready_to_consume_types, num_types)
     if len(ready_boxes):
         action = take_item_from_grid(state, ready_boxes)
         return (action, "take item from grid") if verbose else action
     elif len(entrypoints_with_items):
-        action = take_item_from_ep(list(entrypoints_with_items.keys()))
+        action = take_item_from_ep(entrypoints_with_items)
         return (action, "take item from ep") if verbose else action
     else:
         return (idle(), "idle") if verbose else idle()
@@ -403,6 +411,12 @@ def act(env: Storehouse, action: tuple, act_verbose: str = "") -> tuple:
     return state, reward
 
 
+def get_nearest_outpoint(agent_grid: np.array, box_grid, outpoints: list):
+    agent_position = get_max_position(agent_grid)[0]
+    out_score = {pos: check_reachable(box_grid, agent_position, pos) for pos in outpoints}
+    return min(out_score, key=out_score.get)
+
+
 def ehp(env: Storehouse, state: np.array, verbose=False):
     """
     EHP, fixed as a policy, usage:
@@ -412,15 +426,15 @@ def ehp(env: Storehouse, state: np.array, verbose=False):
           is necessary to get some static info from the environment (positions mostly)
     """
     # Static information
-    outpoint_position = env.outpoints.outpoints[0]
+    outpoint_positions = env.outpoints.outpoints
     num_types = len(env.type_information)
     entrypoint_position = [ep.position for ep in env.entrypoints]
     ####
-    ready_to_consume_types = get_rtct_from_state(state, outpoint_position, num_types)
-    entrypoints_with_items = get_epwi_from_state(state, entrypoint_position, num_types)
+    ready_to_consume_types = get_ready_to_consume_items_from_state(state, outpoint_positions[0], num_types)
+    entrypoints_with_items = get_ep_with_items_from_state(state, entrypoint_position, num_types)
     agent_item_type = get_agent_item_type(state, num_types)
     if len(agent_item_type):
-        return drop_box(state, agent_item_type, ready_to_consume_types, outpoint_position, verbose)
+        return drop_box(state, agent_item_type, ready_to_consume_types, outpoint_positions, verbose)
     else:
         return take_box(state, ready_to_consume_types, entrypoints_with_items, num_types, verbose)
 
@@ -487,7 +501,7 @@ def main(
             raise NotImplementedError
         if not VISUAL:
             pbar.update(1)
-    print(f"Finish! Results saved in {log_folder}.\nMean score: {cum_reward / timesteps * int(max_steps)}")
+    print(f"Finish! Results saved in {log_folder}.\nMean score: {cum_reward}")
 
 
 if __name__ == "__main__":
