@@ -379,7 +379,8 @@ def drop_box(
 def take_box(
     state: np.array, ready_to_consume_types: list, entrypoints_with_items: dict, num_types: int, verbose=False
 ) -> np.array:
-    if len(ready_boxes := get_ready_boxes_in_grid(state, ready_to_consume_types, num_types)):
+    ready_boxes = get_ready_boxes_in_grid(state, ready_to_consume_types, num_types)
+    if len(ready_boxes):
         action = take_item_from_grid(state, ready_boxes)
         return (action, "take item from grid") if verbose else action
     elif len(entrypoints_with_items):
