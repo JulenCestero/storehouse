@@ -368,7 +368,9 @@ class Storehouse(gym.Env):
         Age bounded within [0, 500]. Returns the percentage of the age factor [0, 1]. Linear (for now)
         [UPDATE/FIX] Added '1 - ...' to give more weight (therefore, worse rw) to newer items, instead of older items
         """
-        return (1 - min(max(abs(age), 0), 500) / 500) ** 2 + (min(max(abs(age), 0), 500) / 500) ** 2
+        bound = 500
+        bounded_age = min(max(abs(age), 0), bound) / bound
+        return (1 - bounded_age) ** 2 + (bounded_age) ** 2
 
     def delivery_reward(self, box):
         min_rew = -0.5
@@ -790,11 +792,11 @@ class Storehouse(gym.Env):
             box.update_age(steps)
         self.outpoints.update_timers(steps)
         for entrypoint in self.entrypoints:
+            self.max_id = entrypoint.update_entrypoint(max_id=self.max_id, steps=steps)
             try:
                 self.grid[entrypoint.position] = entrypoint.material_queue[0].id
             except IndexError as ex:
                 self.grid[entrypoint.position] = 0
-            self.max_id = entrypoint.update_entrypoint(max_id=self.max_id, steps=steps)
 
     def act(self, agent, action, info):
         # Movement
@@ -991,11 +993,7 @@ class Storehouse(gym.Env):
                 if element == 0:
                     encoded_el = " "
                 elif (r, e) in [entrypoint.position for entrypoint in self.entrypoints]:
-                    encoded_el = [
-                        self.entrypoints[ii].material_queue[0].type
-                        for ii in range(len(self.entrypoints))
-                        if self.entrypoints[ii].position == (r, e)
-                    ][0]
+                    encoded_el = [ep.material_queue[0].type for ep in self.entrypoints if ep.position == (r, e)][0]
                 else:
                     encoded_el = self.material[element].type
                 try:
