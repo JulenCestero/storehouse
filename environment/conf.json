@@ -65,11 +65,11 @@
       "num_agents": 1,
       "material_types": {
         "A": {
-          "create": 0.3,
+          "create": 0.2,
           "deliver": 0.025
         },
         "B": {
-          "create": 0.35,
+          "create": 0.25,
           "deliver": 0.02
         }
       },
