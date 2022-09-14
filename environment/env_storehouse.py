@@ -400,6 +400,7 @@ class Storehouse(gym.Env):
     def get_macro_action_reward(self, ag: Agent, box: Box = None) -> float:
         if self.get_ready_to_consume_types():
             if ag.position in self.outpoints.outpoints:
+                # return self.__new_reward()
                 return self.delivery_reward(box)
             return -0.9 if len(self.material) or self.get_entrypoints_with_items() else 0
         elif not self.get_ready_to_consume_types() and self.get_entrypoints_with_items():
@@ -411,19 +412,41 @@ class Storehouse(gym.Env):
     def normalize_path_cost(cost: int, grid_shape: tuple) -> float:
         return -cost / (prod(grid_shape) / 2)
 
+    def __new_reward(self):
+        """
+        [-0.9, 0] ~ in practice [-0.5, 0]
+        """
+        return max(
+            -0.9,
+            (
+                -sum(
+                    [box.age for box in self.material.values()]
+                    + [box.age for sublist in [ep.material_queue for ep in self.entrypoints] for box in sublist]
+                )
+                / 10000
+            ),
+        )
+
     def get_reward(self, move_status: int, ag: Agent, box: Box = None) -> float:
+        new_r = self.__new_reward()
         if move_status == 0:
-            return -1
-        macro_action_reward = self.get_macro_action_reward(ag, box)
-        if macro_action_reward == -0.9:
-            return -0.9
-        weighted_reward = macro_action_reward
-        if self.path_cost:
-            w = self.path_reward_weight
-            micro_action_reward = self.normalize_path_cost(len(self.path) - 1, self.grid.shape)
-            weighted_reward = (1 - w) * macro_action_reward + w * micro_action_reward if micro_action_reward <= 0 else -1
-        # assert weighted_reward <= 0
-        return weighted_reward
+            return -0.5 + new_r
+        elif move_status == 2 and ag.position in self.outpoints.outpoints:
+            self.score.delivered_boxes += 1
+            return 0
+            # return new_r
+        else:
+            return new_r
+        # macro_action_reward = self.get_macro_action_reward(ag, box)
+        # if macro_action_reward == -0.9:
+        #     return -0.9
+        # weighted_reward = macro_action_reward
+        # if self.path_cost:
+        #     w = self.path_reward_weight
+        #     micro_action_reward = self.normalize_path_cost(len(self.path) - 1, self.grid.shape)
+        #     weighted_reward = (1 - w) * macro_action_reward + w * micro_action_reward if micro_action_reward <= 0 else -1
+        # # assert weighted_reward <= 0
+        # return weighted_reward
 
     def log(self, action):
         if self.done:
@@ -447,7 +470,7 @@ class Storehouse(gym.Env):
     def normalize_type(self, type: str) -> float:
         return (ord(type) - (ord("A") - 1)) * 255 / len(self.type_information)
 
-    def get_ready_to_consume_types(self):
+    def get_ready_to_consume_types(self) -> dict:
         try:
             return {order.type for order in self.outpoints.delivery_schedule if order.ready}
         except IndexError:
@@ -593,17 +616,15 @@ class Storehouse(gym.Env):
             }
         )
 
-    def augment_state(self, box_grid, age_grid, agent_grid) -> np.array:
+    @staticmethod
+    def augment_state(box_grid, age_grid, agent_grid, augment_factor) -> np.array:
         return np.array(
-            [
-                np.kron(grid, np.ones((self.augment_factor, self.augment_factor)))
-                for grid in np.array([box_grid, age_grid, agent_grid])
-            ]
+            [np.kron(grid, np.ones((augment_factor, augment_factor))) for grid in np.array([box_grid, age_grid, agent_grid])]
         )
 
     def mix_state(self, box_grid, age_grid, agent_grid):
         return (
-            self.augment_state(box_grid, age_grid, agent_grid)
+            self.augment_state(box_grid, age_grid, agent_grid, self.augment_factor)
             if self.augmented
             else np.array([box_grid, age_grid, agent_grid])
         )
@@ -822,10 +843,13 @@ class Storehouse(gym.Env):
         self.current_return += reward
         info["timer"] = self.score.timer
         info["delivered"] = self.score.delivered_boxes
+        info["outpoint queue"] = {
+            t: sum((deliver.num_boxes) for deliver in self.outpoints.delivery_schedule if deliver.type == t and deliver.ready)
+            for t in self.get_ready_to_consume_types()
+        }
         for entrypoint in self.entrypoints:
             info[f"EP{entrypoint.position}"] = list(entrypoint.material_queue)
 
-        info["outpoint queue"] = self.outpoints.delivery_schedule
         self.last_info = info
         return self.get_state(), reward, self.done, info
 
@@ -898,6 +922,9 @@ class Storehouse(gym.Env):
         self.num_actions = 0
         self.current_return = 0
         self.material = {}
+        self.last_action = 0
+        self.last_r = 0
+        self.last_info = {}
         self.outpoints.reset()
         for entrypoint in self.entrypoints:
             entrypoint.reset()
@@ -1035,7 +1062,7 @@ class Storehouse(gym.Env):
 if __name__ == "__main__":
     from time import sleep
 
-    env = Storehouse(random_start=True, save_episodes=True)
+    env = Storehouse(random_start=True, save_episodes=False)
     n_a = env.action_space.n
     for _ in range(10):
         env.reset(1)

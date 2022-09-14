@@ -1,5 +1,6 @@
 import copy
 import operator
+import pickle as pkl
 import pprint
 from time import sleep
 
@@ -14,6 +15,7 @@ from tqdm import tqdm
 STEPS = 100000
 SLEEP_TIME = 0.00
 VISUAL = True
+AUGMENT_FACTOR = 6
 
 
 def store_item(env: Storehouse, waiting_items: list):
@@ -482,6 +484,7 @@ def ehp(env: Storehouse, state: np.array, verbose=False):
 @click.option("-r", "--random_Start", default=False)
 @click.option("-w", "--path_reward_weight", default=0.5)
 @click.option("-s", "--seed", default=None, type=int)
+@click.option("-mdp", "--mdp", default=False, type=bool)
 def main(
     log_folder,
     policy,
@@ -494,6 +497,7 @@ def main(
     random_start,
     path_reward_weight,
     seed,
+    mdp,
 ):
     global VISUAL
     global SLEEP_TIME
@@ -512,6 +516,8 @@ def main(
         path_reward_weight=path_reward_weight,
         seed=seed,
     )
+    if mdp:
+        data = {"state": [], "action": [], "reward": [], "next_state": [], "done": []}
     s = env.reset(VISUAL)
     cum_reward = []
     cum_deliveries = []
@@ -524,7 +530,14 @@ def main(
             initial_human_policy(env, s)
         elif policy == "ehp":
             action, act_info = ehp(env, s, verbose=True)
-            s, r, done, info = act(env, action, act_info)
+            n_s, r, done, info = act(env, action, act_info)
+            if mdp:
+                data["state"].append(env.augment_state(s[0], s[1], s[2], AUGMENT_FACTOR))
+                data["action"].append(env.denorm_action(action))
+                data["reward"].append(r)
+                data["next_state"].append(env.augment_state(n_s[0], n_s[1], n_s[2], AUGMENT_FACTOR))
+                data["done"].append(done)
+            s = n_s
             if done:
                 cum_reward.append(env.current_return)
                 cum_deliveries.append(env.score.delivered_boxes)
@@ -538,6 +551,9 @@ def main(
     print(
         f"Finish! Results saved in {log_folder}.\nMean score: {np.mean(cum_reward)}. Delivered boxes: {np.mean(cum_deliveries)}"
     )
+    if mdp:
+        with open("mdp.pkl", "wb") as f:
+            pkl.dump(data, f)
 
 
 if __name__ == "__main__":
