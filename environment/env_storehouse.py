@@ -30,7 +30,7 @@ MAX_MOVEMENTS = 1000  # 50
 MIN_CNN_LEN = 32
 MIN_SB3_SIZE = 32
 EPISODE = 0
-NUM_RANDOM_STATES = 500
+NUM_RANDOM_STATES = 2000
 PATH_REWARD_PROPORTION = 0.0
 
 
@@ -644,7 +644,7 @@ class Storehouse(gym.Env):
 
     def normalize_type_combination(self, ready_to_consume_types: list, num_types: int) -> float:
         num = sum([2 ** self.type_to_int(consume_type) for consume_type in ready_to_consume_types] + [0])
-        return num * 255 / (2 ** num_types - 1)
+        return num * 255 / (2**num_types - 1)
 
     def construct_age_grid(self, age_grid):
         for box in self.material.values():
