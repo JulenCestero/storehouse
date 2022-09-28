@@ -363,7 +363,7 @@ class Storehouse(gym.Env):
         return len(path) - 1  # If agent is idle, it counts as a movement of 1, we want 0
 
     @staticmethod
-    def get_age_factor(age):
+    def __get_age_factor(age):
         """
         Age bounded within [0, 500]. Returns the percentage of the age factor [0, 1]. Linear (for now)
         [UPDATE/FIX] Added '1 - ...' to give more weight (therefore, worse rw) to newer items, instead of older items
@@ -372,9 +372,17 @@ class Storehouse(gym.Env):
         bounded_age = min(max(abs(age), 0), bound) / bound
         return (1 - bounded_age) ** 2 + (bounded_age) ** 2
 
+    @staticmethod
+    def get_age_factor(age, old_age):
+        """
+        Age bounded within [0, 500]. Returns the percentage of the age factor [0, 1]. Linear (for now)
+        [UPDATE/FIX] Added '1 - ...' to give more weight (therefore, worse rw) to newer items, instead of older items
+        """
+        bound = 500
+        return min(max(abs(age - old_age), 0), bound) / bound
+
     def delivery_reward(self, box):
         min_rew = -0.5
-        age_factor = self.get_age_factor(box.age)
         oldest_box = max(
             [material for material in self.material.values() if material.type == box.type]
             + [
@@ -385,6 +393,7 @@ class Storehouse(gym.Env):
             ],
             key=operator.attrgetter("age"),
         )
+        age_factor = self.get_age_factor(box.age, oldest_box.age)
         self.score.delivered_boxes += 1
         if box.id != oldest_box.id:
             self.score.non_optimal_material += 1
@@ -400,7 +409,6 @@ class Storehouse(gym.Env):
     def get_macro_action_reward(self, ag: Agent, box: Box = None) -> float:
         if self.get_ready_to_consume_types():
             if ag.position in self.outpoints.outpoints:
-                # return self.__new_reward()
                 return self.delivery_reward(box)
             return -0.9 if len(self.material) or self.get_entrypoints_with_items() else 0
         elif not self.get_ready_to_consume_types() and self.get_entrypoints_with_items():
@@ -427,7 +435,7 @@ class Storehouse(gym.Env):
             ),
         )
 
-    def get_reward(self, move_status: int, ag: Agent, box: Box = None) -> float:
+    def __get_reward(self, move_status: int, ag: Agent, box: Box = None) -> float:
         new_r = self.__new_reward()
         if move_status == 0:
             return -0.5 + new_r
@@ -437,16 +445,26 @@ class Storehouse(gym.Env):
             # return new_r
         else:
             return new_r
-        # macro_action_reward = self.get_macro_action_reward(ag, box)
-        # if macro_action_reward == -0.9:
-        #     return -0.9
-        # weighted_reward = macro_action_reward
-        # if self.path_cost:
-        #     w = self.path_reward_weight
-        #     micro_action_reward = self.normalize_path_cost(len(self.path) - 1, self.grid.shape)
-        #     weighted_reward = (1 - w) * macro_action_reward + w * micro_action_reward if micro_action_reward <= 0 else -1
-        # # assert weighted_reward <= 0
-        # return weighted_reward
+
+    def __get_reward(self, move_status: int, ag: Agent, box: Box = None) -> float:
+        if move_status == 2 and ag.position in self.outpoints.outpoints:
+            self.score.delivered_boxes += 1
+            return 1
+        return -1
+
+    def get_reward(self, move_status: int, ag: Agent, box: Box = None) -> float:
+        if move_status == 0:
+            return -1
+        macro_action_reward = self.get_macro_action_reward(ag, box)
+        if macro_action_reward == -0.9:
+            return -0.9
+        weighted_reward = macro_action_reward
+        if self.path_cost:
+            w = self.path_reward_weight
+            micro_action_reward = self.normalize_path_cost(len(self.path) - 1, self.grid.shape)
+            weighted_reward = (1 - w) * macro_action_reward + w * micro_action_reward if micro_action_reward <= 0 else -1
+        # assert weighted_reward <= 0
+        return weighted_reward
 
     def log(self, action):
         if self.done:
