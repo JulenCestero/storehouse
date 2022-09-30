@@ -228,10 +228,15 @@ class Storehouse(gym.Env):
         path_cost: bool = False,
         path_reward_weight: float = PATH_REWARD_PROPORTION,
         seed: int = None,  # used for random_start
+        reward_function: int = 0,  # To choose between reward functions
     ):
         # logging.info(
         #     f"Logging: {logging}, save_episodes: {save_episodes}, max_steps: {max_steps}, conf_name: {conf_name}, augmented: {augment}, random_start: {random_start}, path_cost: {path_cost}, path_weights: {path_reward_weight}"
         # )
+        if reward_function == 0:
+            self.get_reward = self.get_reward
+        elif reward_function == 1:
+            self.get_reward = self.__get_reward_1
         self.signature = {}
         self.rng = [np.random.default_rng(seed)]
         self.max_id = 1
@@ -260,7 +265,9 @@ class Storehouse(gym.Env):
         else:
             size = self.grid.shape
         self.action_space = gym.spaces.Discrete(self.grid.shape[0] * self.grid.shape[1])
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(size[0], size[1], self.feature_number), dtype=np.uint8)
+        self.observation_space = gym.spaces.Box(
+            low=0.0, high=255.0, shape=(size[0], size[1], self.feature_number), dtype=np.uint8
+        )
         self.material = {}  # dict of objects of the class box. {id: Box} form of the dict. ID > 0
         self.agents = [Agent((0, 0)) for _ in range(self.num_agents)]
         self.done = False
@@ -435,7 +442,7 @@ class Storehouse(gym.Env):
             ),
         )
 
-    def __get_reward(self, move_status: int, ag: Agent, box: Box = None) -> float:
+    def __get_reward_2(self, move_status: int, ag: Agent, box: Box = None) -> float:
         new_r = self.__new_reward()
         if move_status == 0:
             return -0.5 + new_r
@@ -446,7 +453,7 @@ class Storehouse(gym.Env):
         else:
             return new_r
 
-    def __get_reward(self, move_status: int, ag: Agent, box: Box = None) -> float:
+    def __get_reward_1(self, move_status: int, ag: Agent, box: Box = None) -> float:
         if move_status == 2 and ag.position in self.outpoints.outpoints:
             self.score.delivered_boxes += 1
             return 1
@@ -696,7 +703,11 @@ class Storehouse(gym.Env):
         return available_action_grid
 
     def initialize_grids(self):
-        return np.zeros(self.grid.shape), np.zeros(self.grid.shape), np.zeros(self.grid.shape)
+        return (
+            np.zeros(self.grid.shape, dtype=np.uint8),
+            np.zeros(self.grid.shape, dtype=np.uint8),
+            np.zeros(self.grid.shape, dtype=np.uint8),
+        )
 
     def construct_grids(self):
         box_grid, age_grid, agent_grid = self.initialize_grids()
@@ -709,7 +720,7 @@ class Storehouse(gym.Env):
         if self.normalized_state:
             state_mix = self.normalize_state(state_mix)
         self.signature = self.get_signature()
-        return state_mix if self.transpose_state else state_mix.reshape(size + (self.feature_number,))
+        return (state_mix if self.transpose_state else state_mix.reshape(size + (self.feature_number,))).astype("uint8")
         # state_mix = state_mix.reshape(size + (self.feature_number,))
         # return state_mix.transpose([2, 0, 1]) if self.transpose_state else state_mix
 
