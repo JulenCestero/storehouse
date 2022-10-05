@@ -9,9 +9,10 @@ import numpy as np
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
-from storehouse.environment.env_storehouse import Storehouse
+from storehouse.environment.env_storehouse import TYPE_CODIFICATION, Storehouse
 from tqdm import tqdm
 
+TYPE_COMB_CODIFICATION = {50: ["A"], 100: ["B"], 150: ["A", "B"]}
 STEPS = 100000
 SLEEP_TIME = 0.00
 VISUAL = True
@@ -200,7 +201,7 @@ def decode_material(encoded_material: list) -> set:
 
 
 def denormalize_out_state(state: float, num_types: int) -> int:
-    return int(state / 255 * (2 ** num_types - 1))
+    return int(state / 255 * (2**num_types - 1))
 
 
 def deserialize_out_state(state: int) -> list:
@@ -218,13 +219,20 @@ def get_ready_to_consume_items_from_state(s: np.array, out_position: list, num_t
     outpoint_state = box_grid[out_position]
     if outpoint_state == 0:
         return []
-    denormalized_out_state = denormalize_out_state(outpoint_state, num_types)
-    wanted_material_encoded = deserialize_out_state(denormalized_out_state)
-    return decode_material(wanted_material_encoded)
+    # denormalized_out_state = denormalize_out_state(outpoint_state, num_types)
+    # wanted_material_encoded = deserialize_out_state(denormalized_out_state)
+    # return decode_material(wanted_material_encoded)
+    else:
+        return TYPE_COMB_CODIFICATION[outpoint_state]
 
 
 def denormalize_type(encoded_type: int, num_types: int) -> str:
-    return int_to_type(int(encoded_type / 255 * num_types) - 1)
+    # return int_to_type(int(encoded_type / 255 * num_types) - 1)
+    try:
+        return [key for key, value in TYPE_CODIFICATION.items() if encoded_type == value][0]
+    except KeyError:
+        print("denormalize_type")
+        raise
 
 
 class EntrypointBox:
@@ -263,6 +271,8 @@ def get_ready_boxes_in_grid(s: np.array, ready_types: set, num_types: int) -> li
     box_grid = s[0]
     available_boxes = {}
     for ii, row in enumerate(box_grid):
+        if ii == box_grid.shape[0] - 1:
+            continue
         for jj, val in enumerate(row):
             if val > 0:
                 available_boxes[(ii, jj)] = denormalize_type(val, num_types)
@@ -315,7 +325,8 @@ def take_item_from_ep(ep: list) -> int:  # Return action
 def deposit_item_in_grid(state: np.array, entrypoints, outpoints) -> np.array:
     age_grid = state[1]
     agent_grid = state[2]
-    target_cell = find_target_cell(age_grid, entrypoints, outpoints)
+    agent_position = get_max_position(agent_grid)[0]
+    target_cell = find_target_cell(age_grid, entrypoints, outpoints, agent_position)
     return (4, 0) if target_cell is None else target_cell
 
 
@@ -324,7 +335,7 @@ def idle():
 
 
 def prepare_grid(matrix: np.array, start: tuple, end: tuple, whitelist: list = []) -> Grid:
-    prepared_matrix = np.array(matrix)
+    prepared_matrix = np.array(matrix, dtype="int16")
     prepared_matrix[start] = 0
     prepared_matrix[end] = 0
     for cell in whitelist:
@@ -346,16 +357,12 @@ def check_reachable(matrix: np.array, start_cell: tuple, end_cell: tuple, entryp
     return len(path)
 
 
-def find_target_cell(
-    grid: np.array,
-    entrypoints,
-    outpoints,
-) -> tuple:  # TODO: Change to  pathfinding
+def find_target_cell(grid: np.array, entrypoints, outpoints, agent_position) -> tuple:
     target_cell = None
     for ii in range(1, grid.shape[0] - 1):
         for jj in range(1, grid.shape[1] - 1):
             if grid[ii][jj] == 0:
-                if not check_reachable(grid, (1, 0), (ii, jj), entrypoints, outpoints):
+                if not check_reachable(grid, agent_position, (ii, jj), entrypoints, outpoints):
                     continue
                 target_cell = (ii, jj)
                 break
@@ -531,6 +538,11 @@ def main(
         elif policy == "ehp":
             action, act_info = ehp(env, s, verbose=True)
             n_s, r, done, info = act(env, action, act_info)
+            if r == -1:
+                print("Pochillo...")
+                # import pdb
+
+                # pdb.set_trace()
             if mdp:
                 data["state"].append(env.augment_state(s[0], s[1], s[2], AUGMENT_FACTOR))
                 data["action"].append(env.denorm_action(action))

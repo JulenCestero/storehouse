@@ -32,6 +32,8 @@ MIN_SB3_SIZE = 32
 EPISODE = 0
 NUM_RANDOM_STATES = 2000
 PATH_REWARD_PROPORTION = 0.0
+TYPE_CODIFICATION = {"A": 100, "B": 200}
+TYPE_COMB_CODIFICATION = {0: 0, 1: 50, 2: 100, 3: 150, 4: 200, 5: 255}
 
 
 class Score:
@@ -266,7 +268,7 @@ class Storehouse(gym.Env):
             size = self.grid.shape
         self.action_space = gym.spaces.Discrete(self.grid.shape[0] * self.grid.shape[1])
         self.observation_space = gym.spaces.Box(
-            low=0.0, high=255.0, shape=(size[0], size[1], self.feature_number), dtype=np.uint8
+            low=0.0, high=255.0, shape=(size[0], size[1], self.feature_number), dtype=np.uint16
         )
         self.material = {}  # dict of objects of the class box. {id: Box} form of the dict. ID > 0
         self.agents = [Agent((0, 0)) for _ in range(self.num_agents)]
@@ -346,7 +348,7 @@ class Storehouse(gym.Env):
 
     @staticmethod
     def prepare_grid(matrix: np.array, start: tuple, end: tuple, whitelist: list = None) -> Grid:
-        prepared_matrix = np.array(matrix)
+        prepared_matrix = np.array(matrix, dtype="int16")
         prepared_matrix[start] = 0
         prepared_matrix[end] = 0
         for cell in whitelist:
@@ -490,10 +492,11 @@ class Storehouse(gym.Env):
 
     @staticmethod
     def normalize_age(age: int) -> float:
-        return min(max(age, 0), 1000) / 1000 * 255
+        return ceil(min(max(age, 0), 1000) / 1000 * 255)
 
-    def normalize_type(self, type: str) -> float:
-        return (ord(type) - (ord("A") - 1)) * 255 / len(self.type_information)
+    def normalize_type(self, type: str) -> int:
+        # return (ord(type) - (ord("A") - 1)) * 255 / len(self.type_information)
+        return TYPE_CODIFICATION[type]
 
     def get_ready_to_consume_types(self) -> dict:
         try:
@@ -667,9 +670,10 @@ class Storehouse(gym.Env):
         """
         return ord(box_type) - ord("A")
 
-    def normalize_type_combination(self, ready_to_consume_types: list, num_types: int) -> float:
+    def normalize_type_combination(self, ready_to_consume_types: list, num_types: int) -> int:
         num = sum([2 ** self.type_to_int(consume_type) for consume_type in ready_to_consume_types] + [0])
-        return num * 255 / (2**num_types - 1)
+        # return num * 255 / (2**num_types - 1)
+        return TYPE_COMB_CODIFICATION[num]
 
     def construct_age_grid(self, age_grid):
         for box in self.material.values():
@@ -704,9 +708,9 @@ class Storehouse(gym.Env):
 
     def initialize_grids(self):
         return (
-            np.zeros(self.grid.shape, dtype=np.uint8),
-            np.zeros(self.grid.shape, dtype=np.uint8),
-            np.zeros(self.grid.shape, dtype=np.uint8),
+            np.zeros(self.grid.shape, dtype=np.uint16),
+            np.zeros(self.grid.shape, dtype=np.uint16),
+            np.zeros(self.grid.shape, dtype=np.uint16),
         )
 
     def construct_grids(self):
@@ -720,7 +724,7 @@ class Storehouse(gym.Env):
         if self.normalized_state:
             state_mix = self.normalize_state(state_mix)
         self.signature = self.get_signature()
-        return (state_mix if self.transpose_state else state_mix.reshape(size + (self.feature_number,))).astype("uint8")
+        return (state_mix if self.transpose_state else state_mix.reshape(size + (self.feature_number,))).astype("uint16")
         # state_mix = state_mix.reshape(size + (self.feature_number,))
         # return state_mix.transpose([2, 0, 1]) if self.transpose_state else state_mix
 
@@ -1001,15 +1005,16 @@ class Storehouse(gym.Env):
         """
         Encodes the grid from numbers to letters
         """
-        return " " if num == 0 else chr(int(ord("A") - 1 + num))
-        # return str(num)
+        # return " " if num == 0 else chr(int(ord("A") - 1 + num))
+        return " " if num == 0 else [key for key, value in TYPE_CODIFICATION.items() if num == value][0]
 
     @staticmethod
     def decode(letter: str) -> int:
         """
         Decodes the grid from letters to numbers
         """
-        return ord(letter) - (ord("A") - 1)
+        # return ord(letter) - (ord("A") - 1)
+        return TYPE_CODIFICATION[letter]
 
     def render_state(self, dark=True):
         from matplotlib import pyplot as plt
