@@ -268,7 +268,7 @@ class Storehouse(gym.Env):
             size = self.grid.shape
         self.action_space = gym.spaces.Discrete(self.grid.shape[0] * self.grid.shape[1])
         self.observation_space = gym.spaces.Box(
-            low=0.0, high=255.0, shape=(size[0], size[1], self.feature_number), dtype=np.uint16
+            low=0.0, high=255.0, shape=(size[0], size[1], self.feature_number), dtype=np.uint8
         )
         self.material = {}  # dict of objects of the class box. {id: Box} form of the dict. ID > 0
         self.agents = [Agent((0, 0)) for _ in range(self.num_agents)]
@@ -708,9 +708,9 @@ class Storehouse(gym.Env):
 
     def initialize_grids(self):
         return (
-            np.zeros(self.grid.shape, dtype=np.uint16),
-            np.zeros(self.grid.shape, dtype=np.uint16),
-            np.zeros(self.grid.shape, dtype=np.uint16),
+            np.zeros(self.grid.shape, dtype=np.uint8),
+            np.zeros(self.grid.shape, dtype=np.uint8),
+            np.zeros(self.grid.shape, dtype=np.uint8),
         )
 
     def construct_grids(self):
@@ -724,7 +724,7 @@ class Storehouse(gym.Env):
         if self.normalized_state:
             state_mix = self.normalize_state(state_mix)
         self.signature = self.get_signature()
-        return (state_mix if self.transpose_state else state_mix.reshape(size + (self.feature_number,))).astype("uint16")
+        return (state_mix if self.transpose_state else state_mix.reshape(size + (self.feature_number,))).astype("uint8")
         # state_mix = state_mix.reshape(size + (self.feature_number,))
         # return state_mix.transpose([2, 0, 1]) if self.transpose_state else state_mix
 
