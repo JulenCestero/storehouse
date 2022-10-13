@@ -1,0 +1,8 @@
+click==8.1.3
+gym==0.26.2
+matplotlib==3.6.1
+numpy==1.23.3
+pathfinding==1.0.1
+scipy==1.9.2
+Shapely==1.8.4
+tqdm==4.64.1

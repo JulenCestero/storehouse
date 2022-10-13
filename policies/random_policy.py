@@ -26,19 +26,18 @@ def random_agent(env=Storehouse(), timesteps: int = STEPS, visualize=True):
     return cum_reward / timesteps
 
 
-@click.command()
-@click.option("-l", "--log_folder", default=None)
-@click.option("-c", "--conf_name", default="6x6fast")
-@click.option("-m", "--max_steps", default=100)
-@click.option("-v", "--visualize", default=0)
-@click.option("-r", "--random_start", default=0)
-@click.option("-se", "--save_episodes", default=False, type=int)
-@click.option("-pc", "--path_cost", default=False)
-@click.option("-t", "--timesteps", default=STEPS)
-@click.option("-w", "--path_reward_weight", default=0.5)
-@click.option("-s", "--seed", default=None, type=int)
-def main(
-    log_folder, conf_name, max_steps, visualize, path_cost, save_episodes, timesteps, random_start, path_reward_weight, seed
+def run_random_train(
+    log_folder,
+    conf_name,
+    max_steps,
+    visualize,
+    path_cost,
+    save_episodes,
+    timesteps,
+    random_start,
+    path_reward_weight,
+    seed,
+    reward,
 ):
     global SLEEP_TIME
     SLEEP_TIME = 0.2 if visualize else SLEEP_TIME
@@ -53,10 +52,51 @@ def main(
         random_start=random_start,
         path_reward_weight=path_reward_weight,
         seed=seed,
+        reward_function=reward,
     )
     env.seed(seed)
     mean_reward = random_agent(env, timesteps=timesteps, visualize=visualize)
     print(f"Results saved in {log_folder}. Mean reward: {mean_reward * int(max_steps)}")
+
+
+@click.command()
+@click.option("-l", "--log_folder", default=None)
+@click.option("-c", "--conf_name", default="6x6fast")
+@click.option("-m", "--max_steps", default=100)
+@click.option("-v", "--visualize", default=0)
+@click.option("-r", "--random_start", default=0)
+@click.option("-se", "--save_episodes", default=False, type=int)
+@click.option("-pc", "--path_cost", default=True)
+@click.option("-t", "--timesteps", default=STEPS)
+@click.option("-w", "--path_reward_weight", default=0.0)
+@click.option("-s", "--seed", default=None, type=int)
+@click.option("-rw", "--reward", default=0, type=int)
+def main(
+    log_folder,
+    conf_name,
+    max_steps,
+    visualize,
+    path_cost,
+    save_episodes,
+    timesteps,
+    random_start,
+    path_reward_weight,
+    seed,
+    reward,
+):
+    run_random_train(
+        log_folder,
+        conf_name,
+        max_steps,
+        visualize,
+        path_cost,
+        save_episodes,
+        timesteps,
+        random_start,
+        path_reward_weight,
+        seed,
+        reward,
+    )
 
 
 if __name__ == "__main__":

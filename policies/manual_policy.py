@@ -479,20 +479,7 @@ def ehp(env: Storehouse, state: np.array, verbose=False):
         )
 
 
-@click.command()
-@click.option("-l", "--log_folder", default=None)
-@click.option("-p", "--policy", default="ehp")
-@click.option("-c", "--conf_name", default="6x6fast")
-@click.option("-m", "--max_steps", default=100)
-@click.option("-v", "--visualize", default=0)
-@click.option("-t", "--timesteps", default=STEPS)
-@click.option("-se", "--save_episodes", default=False, type=int)
-@click.option("-pc", "--path_cost", default=False)
-@click.option("-r", "--random_Start", default=False)
-@click.option("-w", "--path_reward_weight", default=0.5)
-@click.option("-s", "--seed", default=None, type=int)
-@click.option("-mdp", "--mdp", default=False, type=bool)
-def main(
+def run_manual_train(
     log_folder,
     policy,
     conf_name,
@@ -505,6 +492,7 @@ def main(
     path_reward_weight,
     seed,
     mdp,
+    reward,
 ):
     global VISUAL
     global SLEEP_TIME
@@ -522,6 +510,7 @@ def main(
         random_start=int(random_start),
         path_reward_weight=path_reward_weight,
         seed=seed,
+        reward_function=reward,
     )
     if mdp:
         data = {"state": [], "action": [], "reward": [], "next_state": [], "done": []}
@@ -566,6 +555,52 @@ def main(
     if mdp:
         with open("mdp.pkl", "wb") as f:
             pkl.dump(data, f)
+
+
+@click.command()
+@click.option("-l", "--log_folder", default=None)
+@click.option("-p", "--policy", default="ehp")
+@click.option("-c", "--conf_name", default="6x6fast")
+@click.option("-m", "--max_steps", default=100)
+@click.option("-v", "--visualize", default=0)
+@click.option("-t", "--timesteps", default=STEPS)
+@click.option("-se", "--save_episodes", default=False, type=int)
+@click.option("-pc", "--path_cost", default=True)
+@click.option("-r", "--random_start", default=False)
+@click.option("-w", "--path_reward_weight", default=0.0)
+@click.option("-s", "--seed", default=None, type=int)
+@click.option("-mdp", "--mdp", default=False, type=bool)
+@click.option("-rw", "--reward", default=0, type=int)
+def main(
+    log_folder,
+    policy,
+    conf_name,
+    max_steps,
+    visualize,
+    timesteps,
+    save_episodes,
+    path_cost,
+    random_start,
+    path_reward_weight,
+    seed,
+    mdp,
+    reward,
+):
+    run_manual_train(
+        log_folder,
+        policy,
+        conf_name,
+        max_steps,
+        visualize,
+        timesteps,
+        save_episodes,
+        path_cost,
+        random_start,
+        path_reward_weight,
+        seed,
+        mdp,
+        reward,
+    )
 
 
 if __name__ == "__main__":
