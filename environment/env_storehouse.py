@@ -19,6 +19,7 @@ from pathfinding.finder.a_star import AStarFinder
 from scipy.stats import poisson
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
+from skimage.morphology import flood_fill
 
 CONF_NAME = "6x6fast"
 MAX_ORDERS = 3
@@ -504,7 +505,43 @@ class Storehouse(gym.Env):
         except IndexError:
             return {}
 
+    def check_reachable(self, position: tuple, maze: np.array) -> bool:
+        adjacent_cells_delta = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+        for delta in adjacent_cells_delta:
+            adjacent_cell = tuple(map(operator.add, position, delta))
+            try:
+                if maze[adjacent_cell] == 0.5:
+                    return True
+            except IndexError:
+                continue
+        return False
+
     def get_available_actions(self) -> list:
+        # Get reachable cells
+        agent = self.agents[0]
+        maze = np.array(self.grid)
+        for ep in self.entrypoints:
+            maze[ep.position] = 0
+        for op in self.outpoints.outpoints:
+            maze[op] = 0
+        maze[agent.position] = 0
+        maze = flood_fill(maze, agent.position, 0.5, connectivity=1)
+        if agent.got_item:
+            for ep in self.entrypoints:
+                maze[ep.position] = 0
+            if self.material[agent.got_item].type not in self.get_ready_to_consume_types():
+                for op in self.outpoints.outpoints:
+                    maze[op] = 0
+        else:
+            available_boxes = [pos for pos in np.argwhere(self.grid > 0) if self.check_reachable(pos, maze)]
+            for pos in available_boxes:
+                maze[tuple(pos)] = 0.5
+            for op in self.outpoints.outpoints:
+                maze[op] = 0
+        self.action_mask = maze.reshape(-1) == 0.5
+        return self.action_mask
+
+    def __DEPRECATED_get_available_actions(self) -> list:
         """
         It's less restrictive than it should be. No restricted cells logic
         """
@@ -732,7 +769,7 @@ class Storehouse(gym.Env):
         try:  # Checking if the new position is valid
             _ = self.grid[movement]
             assert all(ii >= 0 for ii in movement)
-            assert movement in self.get_available_actions()
+            assert self.get_available_actions()[self.denorm_action(movement)]
             assert self.find_path_cost(ag.position, movement) >= 0
         except (AssertionError, IndexError):
             self.num_invalid += 1
