@@ -38,6 +38,7 @@ def run_random_train(
     path_reward_weight,
     seed,
     reward,
+    gamma,
 ):
     global SLEEP_TIME
     SLEEP_TIME = 0.2 if visualize else SLEEP_TIME
@@ -53,6 +54,7 @@ def run_random_train(
         path_reward_weight=path_reward_weight,
         seed=seed,
         reward_function=reward,
+        gamma=gamma,
     )
     env.seed(seed)
     mean_reward = random_agent(env, timesteps=timesteps, visualize=visualize)
@@ -71,6 +73,7 @@ def run_random_train(
 @click.option("-w", "--path_reward_weight", default=0.0)
 @click.option("-s", "--seed", default=None, type=int)
 @click.option("-rw", "--reward", default=0, type=int)
+@click.option("-g", "--gamma", default=0.99, type=float)
 def main(
     log_folder,
     conf_name,
@@ -83,6 +86,7 @@ def main(
     path_reward_weight,
     seed,
     reward,
+    gamma,
 ):
     run_random_train(
         log_folder,
@@ -96,6 +100,7 @@ def main(
         path_reward_weight,
         seed,
         reward,
+        gamma,
     )
 
 

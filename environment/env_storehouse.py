@@ -53,6 +53,7 @@ class Score:
         self.max_id = 0
         self.total_orders = 0
         self.seed = 0
+        self.discounted_return = 0
 
     def print_score(self) -> str:
         return (
@@ -62,7 +63,8 @@ class Score:
             f"{self.timer},"
             f"{self.max_id},"
             f"{self.total_orders},"
-            f"{self.seed}"
+            f"{self.seed},"
+            f"{self.discounted_return}"
         )
 
 
@@ -232,6 +234,7 @@ class Storehouse(gym.Env):
         path_reward_weight: float = PATH_REWARD_PROPORTION,
         seed: int = None,  # used for random_start
         reward_function: int = 0,  # To choose between reward functions
+        gamma: float = 0.99,
     ):
         # logging.info(
         #     f"Logging: {logging}, save_episodes: {save_episodes}, max_steps: {max_steps}, conf_name: {conf_name}, augmented: {augment}, random_start: {random_start}, path_cost: {path_cost}, path_weights: {path_reward_weight}"
@@ -243,6 +246,7 @@ class Storehouse(gym.Env):
         self.signature = {}
         self.rng = [np.random.default_rng(seed)]
         self.max_id = 1
+        self.gamma = gamma
         self.max_steps = max_steps
         self.max_orders = max_orders
         self.log_flag = logging
@@ -291,7 +295,7 @@ class Storehouse(gym.Env):
             self.metrics_log = f"{str(self.logname / self.logname.name)}_metrics.csv"
             with open(self.metrics_log, "a") as f:
                 f.write(
-                    "Delivered Boxes,Filled orders,Score,Steps,Ultra negative achieved,Mean box ages,FIFO violation,time,max_id,Total orders,Seed\n"
+                    "Delivered Boxes,Filled orders,Score,Steps,Ultra negative achieved,Mean box ages,FIFO violation,time,max_id,Total orders,Seed,Discounted return\n"
                 )
             # self.actions_log = open(str(self.logname) + "_actions.csv", "w")
             # self.actions_log.write("")
@@ -904,9 +908,10 @@ class Storehouse(gym.Env):
             info["Info"] = f"Box {box.id} moved"
         else:
             box = None
-        result = self.get_reward(move_status, agent, box)
-        self.score.clear_run_score += result
-        return result, move_status
+        reward = self.get_reward(move_status, agent, box)
+        self.score.clear_run_score += reward
+        self.score.discounted_return = reward + self.score.discounted_return * self.gamma
+        return reward, move_status
 
     def return_result(self, reward, info):
         self.last_r = reward

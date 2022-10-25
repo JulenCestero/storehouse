@@ -493,6 +493,7 @@ def run_manual_train(
     seed,
     mdp,
     reward,
+    gamma,
 ):
     global VISUAL
     global SLEEP_TIME
@@ -511,6 +512,7 @@ def run_manual_train(
         path_reward_weight=path_reward_weight,
         seed=seed,
         reward_function=reward,
+        gamma=gamma,
     )
     if mdp:
         data = {"state": [], "action": [], "reward": [], "next_state": [], "done": []}
@@ -571,6 +573,7 @@ def run_manual_train(
 @click.option("-s", "--seed", default=None, type=int)
 @click.option("-mdp", "--mdp", default=False, type=bool)
 @click.option("-rw", "--reward", default=0, type=int)
+@click.option("-g", "--gamma", default=0.99, type=float)
 def main(
     log_folder,
     policy,
@@ -585,6 +588,7 @@ def main(
     seed,
     mdp,
     reward,
+    gamma,
 ):
     run_manual_train(
         log_folder,
@@ -600,6 +604,7 @@ def main(
         seed,
         mdp,
         reward,
+        gamma,
     )
 
 
