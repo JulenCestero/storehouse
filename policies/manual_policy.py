@@ -530,7 +530,8 @@ def run_manual_train(
             action, act_info = ehp(env, s, verbose=True)
             n_s, r, done, info = act(env, action, act_info)
             if r == -1:
-                print("Pochillo...")
+                # print("Pochillo...")
+                pass
                 # import pdb
 
                 # pdb.set_trace()
