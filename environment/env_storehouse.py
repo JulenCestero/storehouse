@@ -12,6 +12,7 @@ from typing import Iterator
 import gym
 import networkx as nx
 import numpy as np
+from black import out
 from colorama import Back, Fore, Style
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
@@ -407,7 +408,7 @@ class Storehouse(gym.Env):
             entrypoints_with_items = []
         return entrypoints_with_items
 
-    def get_macro_action_reward(self, ag: Agent, box: Box = None) -> float:
+    def __LEGACY_get_macro_action_reward(self, ag: Agent, box: Box = None) -> float:
         if self.get_ready_to_consume_types():
             if ag.position in self.outpoints.outpoints:
                 return self.delivery_reward(box)
@@ -436,7 +437,7 @@ class Storehouse(gym.Env):
             ),
         )
 
-    def __get_reward_2(self, move_status: int, ag: Agent, box: Box = None) -> float:
+    def __get_reward_2(self, move_status: int, ag: Agent) -> float:
         new_r = self.__new_reward()
         if move_status == 0:
             return -0.5 + new_r
@@ -447,13 +448,47 @@ class Storehouse(gym.Env):
         else:
             return new_r
 
-    def __get_reward_1(self, move_status: int, ag: Agent, box: Box = None) -> float:
+    def __get_reward_1(self, move_status: int, ag: Agent) -> float:
         if move_status == 2 and ag.position in self.outpoints.outpoints:
             self.score.delivered_boxes += 1
             return 1
         return -1
 
-    def get_reward(self, move_status: int, ag: Agent, box: Box = None) -> float:
+    def check_idle(self):
+        """
+        Returns True if
+            - Agents without objects
+            - No items in the EPs
+            - Unable to deliver
+        """
+        consumable_types = self.get_ready_to_consume_types()
+        return (
+            not self.agents[0].got_item
+            and (not consumable_types or consumable_types & {box.type for box in self.material.values()})
+            and not self.get_entrypoints_with_items()
+        )
+
+    def get_reward(self, move_status: int) -> float:
+        if self.check_idle():
+            return 0
+        elif move_status == 0:  # Invalid action
+            return -1
+        elif move_status == 1:  # Take from EP
+            return -0.6
+        elif move_status == 2:  # Take from grid
+            return -0.7
+        elif move_status == 3:  # Procrastinate
+            return -0.9
+        elif move_status == 4:  # Drop in OP
+            return self.delivery_reward(self.material[self.grid[self.agents[0].position]])
+        elif move_status == 5:  # Drop in grid
+            return -0.5
+        elif move_status == 6:  # Storage full
+            return -0.8
+        else:
+            return -1
+
+    def __LEGACY_get_reward(self, move_status, ag, box) -> float:
         if move_status == 0:
             return -1
         macro_action_reward = self.get_macro_action_reward(ag, box)
@@ -713,11 +748,13 @@ class Storehouse(gym.Env):
 
         Returns:
             int:    0 for invalid action.
-                    1 for correct take
-                    2 for correct drop
-                    3 for non optimal action (move to empty cell without object)
+                    1 for correct take from entrypoints
+                    2 for correct take from grid
+                    3 for idle action (move to empty cell without object)
+                    4 for correct drop in outpoints
+                    5 for correct drop in grid
+                    6 for moving with a box to outern crown when storage is full
 
-        !IMPROVEMENT IDEA: Delete all the asserts and just check if the movement is in the available movements
         """
         if not self.assert_movement(ag, movement):
             return 0
@@ -727,9 +764,7 @@ class Storehouse(gym.Env):
             return self.drop_item(ag, movement)
 
     def drop_item(self, ag, movement):
-        try:
-            assert ag.got_item  # Check if it can drop an object
-        except AssertionError:
+        if not ag.got_item:
             ag.position = movement
             return 3
         ag.position = movement
@@ -739,24 +774,19 @@ class Storehouse(gym.Env):
             and (movement[0] in (0, self.grid.shape[0] - 1) or movement[1] in (0, self.grid.shape[1] - 1))
         ):  # Move to outern ring
             self.material[ag.got_item].position = movement
-            return 3
+            return 6
         self.grid[ag.position] = ag.got_item
         self.material[ag.got_item].position = movement
         ag.got_item = 0
-        return 2
+        return 4 if movement in self.outpoints.outpoints else 5
 
     def take_item(self, ag, movement):
-        try:
-            assert not ag.got_item  # Check if it can take an object
-            if movement not in [entrypoint.position for entrypoint in self.entrypoints]:
-                assert self.grid[movement] in [box.id for box in self.material.values()]
-        except AssertionError:
-            # logging.error("Agent has object but ordered to take another object")
+        if ag.got_item:
             return 0
         ag.position = movement
         ag.got_item = self.grid[ag.position]  # Store ID of the taken object
         self.grid[ag.position] = 0
-        return 1
+        return 1 if movement in [ep.position for ep in self.entrypoints] else 2
 
     def _step(self, action: tuple, render=False) -> list:
         action = (int(action[0]), int(action[1]))
@@ -769,7 +799,7 @@ class Storehouse(gym.Env):
             reward = 0
             info["done"] = "Max movements achieved. Well done!"
             if self.log_flag:
-                self.log(action)
+                self.log()
             return self.return_result(reward, info)
         ####
         self.score.steps += 1
@@ -807,20 +837,11 @@ class Storehouse(gym.Env):
 
     def act(self, agent, action, info):
         # Movement
-        start_cell = agent.position
         move_status = self.move_agent(agent, action)
-        if move_status in (1, 2):  # If interacted with a Box
-            if move_status == 1 and agent.position in [
-                entrypoint.position for entrypoint in self.entrypoints
-            ]:  # Added new box into the system
-                box = [entrypoint for entrypoint in self.entrypoints if entrypoint.position == agent.position][0].get_item()
-                self.material[box.id] = box
-            else:
-                box = self.material[self.grid[agent.position] if self.grid[agent.position] > 0 else agent.got_item]
-            info["Info"] = f"Box {box.id} moved"
-        else:
-            box = None
-        reward = self.get_reward(move_status, agent, box)
+        if move_status == 1:  # Added new box into the system
+            box = [entrypoint for entrypoint in self.entrypoints if entrypoint.position == agent.position][0].get_item()
+            self.material[box.id] = box
+        reward = self.get_reward(move_status)
         self.score.clear_run_score += reward
         self.score.returns.append(reward)
         return reward, move_status
@@ -1050,7 +1071,7 @@ class Storehouse(gym.Env):
 if __name__ == "__main__":
     from time import sleep
 
-    env = Storehouse(logging=True, random_start=True, save_episodes=False, max_steps=100)
+    env = Storehouse(logging=True, random_start=False, save_episodes=False, max_steps=100)
     n_a = env.action_space.n
     for _ in range(10):
         env.reset(1)
@@ -1061,6 +1082,6 @@ if __name__ == "__main__":
             a = np.random.choice(n_a)
             s, r, done, inf = env.step(a)
             # print(f"Action: {env.norm_action(a)}, Reward: {r}, Info: {inf}")
-            # env.render()
+            env.render()
             t += 1
             # sleep(0.5)
