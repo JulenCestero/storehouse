@@ -27,7 +27,7 @@ MAX_NUM_BOXES = 6
 MIN_NUM_BOXES = 2
 FEATURE_NUMBER = 3
 MAX_INVALID = 10
-MAX_MOVEMENTS = 1000  # 50
+MAX_MOVEMENTS = 100  # 50
 MIN_CNN_LEN = 32
 MIN_SB3_SIZE = 32
 EPISODE = 0
@@ -53,6 +53,7 @@ class Score:
         self.max_id = 0
         self.total_orders = 0
         self.seed = 0
+        self.returns = []
         self.discounted_return = 0
 
     def print_score(self) -> str:
@@ -485,6 +486,12 @@ class Storehouse(gym.Env):
             self.score.box_ages += [box.age for box in self.material.values()]
             self.score.max_id = self.max_id
             self.score.seed = self.original_seed
+            self.score.discounted_return = np.mean(
+                [
+                    sum(self.gamma**ii * ret for ii, ret in enumerate(self.score.returns[jj:]))
+                    for jj in range(len(self.score.returns))
+                ]
+            )
             if not len(self.score.box_ages):
                 self.score.box_ages.append(0)
             with open(self.metrics_log, "a") as f:
@@ -910,7 +917,7 @@ class Storehouse(gym.Env):
             box = None
         reward = self.get_reward(move_status, agent, box)
         self.score.clear_run_score += reward
-        self.score.discounted_return = reward + self.score.discounted_return * self.gamma
+        self.score.returns.append(reward)
         return reward, move_status
 
     def return_result(self, reward, info):
@@ -1138,17 +1145,17 @@ class Storehouse(gym.Env):
 if __name__ == "__main__":
     from time import sleep
 
-    env = Storehouse(random_start=True, save_episodes=False)
+    env = Storehouse(logging=True, random_start=True, save_episodes=False, max_steps=100)
     n_a = env.action_space.n
     for _ in range(10):
         env.reset(1)
         # env.render()
         done = False
         t = 0
-        while not done and t < 100:
+        while not done and t < 105:
             a = np.random.choice(n_a)
             s, r, done, inf = env.step(a)
-            print(f"Action: {env.norm_action(a)}, Reward: {r}, Info: {inf}")
-            env.render()
+            # print(f"Action: {env.norm_action(a)}, Reward: {r}, Info: {inf}")
+            # env.render()
             t += 1
-            sleep(0.5)
+            # sleep(0.5)
