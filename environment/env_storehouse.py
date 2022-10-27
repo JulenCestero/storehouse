@@ -22,7 +22,6 @@ from shapely.geometry.polygon import Polygon
 from skimage.morphology import flood_fill
 
 CONF_NAME = "6x6fast"
-MAX_ORDERS = 3
 MAX_NUM_BOXES = 6
 MIN_NUM_BOXES = 2
 FEATURE_NUMBER = 3
@@ -172,11 +171,10 @@ class Delivery:
 
 
 class Outpoints:
-    def __init__(self, outpoints: list, type_information: dict, delivery_prob: dict, max_orders: int, rng: list):
+    def __init__(self, outpoints: list, type_information: dict, delivery_prob: dict, rng: list):
         self.outpoints = outpoints  # Position
         self.type_information = type_information
         self.delivery_prob = delivery_prob
-        self.max_orders = max_orders
         self.max_num_boxes = MAX_NUM_BOXES
         self.min_num_boxes = MIN_NUM_BOXES
         self.delivery_schedule = []  # Form: [Delivery()]
@@ -227,7 +225,6 @@ class Storehouse(gym.Env):
         transpose_state: bool = False,
         max_steps: int = MAX_MOVEMENTS,
         conf_name: str = CONF_NAME,
-        max_orders: int = MAX_ORDERS,
         augment: bool = None,
         random_start: bool = False,
         normalized_state: bool = False,
@@ -248,7 +245,6 @@ class Storehouse(gym.Env):
         self.max_id = 1
         self.gamma = gamma
         self.max_steps = max_steps
-        self.max_orders = max_orders
         self.log_flag = logging
         self.path_reward_weight = path_reward_weight
         self.load_conf(conf_name)
@@ -296,13 +292,6 @@ class Storehouse(gym.Env):
                 f.write(
                     "Delivered Boxes,Filled orders,Score,Steps,Ultra negative achieved,Mean box ages,FIFO violation,time,max_id,Total orders,Seed,Discounted return\n"
                 )
-            # self.actions_log = open(str(self.logname) + "_actions.csv", "w")
-            # self.actions_log.write("")
-
-    # def __del__(self):
-    # if self.log_flag:
-    # self.metrics_log.close()
-    # self.actions_log.close()
 
     def load_conf(self, conf: str = CONF_NAME):
         """
@@ -324,7 +313,6 @@ class Storehouse(gym.Env):
             [eval(ii) for ii in conf["outpoints"]],
             type_information=self.type_information,
             delivery_prob=conf["delivery_prob"],
-            max_orders=self.max_orders,
             rng=self.rng,
         )
         self.num_agents = conf["num_agents"]
@@ -477,26 +465,23 @@ class Storehouse(gym.Env):
         weighted_reward = (1 - w) * macro_action_reward + w * micro_action_reward if micro_action_reward <= 0 else -1
         return weighted_reward
 
-    def log(self, action):
-        if self.done:
-            self.score.box_ages += [box.age for box in self.material.values()]
-            self.score.max_id = self.max_id
-            self.score.seed = self.original_seed
-            self.score.discounted_return = np.mean(
-                [
-                    sum(self.gamma**ii * ret for ii, ret in enumerate(self.score.returns[jj:]))
-                    for jj in range(len(self.score.returns))
-                ]
-            )
-            if not len(self.score.box_ages):
-                self.score.box_ages.append(0)
-            with open(self.metrics_log, "a") as f:
-                f.write(self.score.print_score() + "\n")
-            if self.save_episodes:
-                with open(f"{self.episode_folder / self.logname.name}_episode_{EPISODE}.json", "w") as f:
-                    json.dump(self.episode, f)
-        # else:
-        # self.actions_log.write(f"{action},{self.agents[0].got_item}\n")
+    def log(self):
+        self.score.box_ages += [box.age for box in self.material.values()]
+        self.score.max_id = self.max_id
+        self.score.seed = self.original_seed
+        self.score.discounted_return = np.mean(
+            [
+                sum(self.gamma**ii * ret for ii, ret in enumerate(self.score.returns[jj:]))
+                for jj in range(len(self.score.returns))
+            ]
+        )
+        if not len(self.score.box_ages):
+            self.score.box_ages.append(0)
+        with open(self.metrics_log, "a") as f:
+            f.write(self.score.print_score() + "\n")
+        if self.save_episodes:
+            with open(f"{self.episode_folder / self.logname.name}_episode_{EPISODE}.json", "w") as f:
+                json.dump(self.episode, f)
 
     @staticmethod
     def normalize_age(age: int) -> float:
@@ -547,63 +532,6 @@ class Storehouse(gym.Env):
                 maze[op] = 0
         self.action_mask = maze.reshape(-1) == 0.5
         return self.action_mask
-
-    def __DEPRECATED_get_available_actions(self) -> list:
-        """
-        It's less restrictive than it should be. No restricted cells logic
-        """
-        ### Assuming 1 agent
-        agent = self.agents[0]
-        ####################
-
-        self.action_mask = np.ones(self.action_mask.shape)
-        if agent.got_item:
-            for pos in np.argwhere(self.grid > 0):
-                self.action_mask[self.denorm_action(pos)] = 0
-            for ep in self.entrypoints:
-                self.action_mask[self.denorm_action(ep.position)] = 0
-            if self.material[agent.got_item].type not in self.get_ready_to_consume_types():
-                for op in self.outpoints.outpoints:
-                    self.action_mask[self.denorm_action(op)] = 0
-        else:
-            for op in self.outpoints.outpoints:
-                self.action_mask[self.denorm_action(op)] = 0
-        self.available_actions = [self.norm_action(action) for action, available in enumerate(self.action_mask) if available]
-        return self.available_actions
-
-    def get_free_storage_of_grid(self):
-        result = []
-        for ii in range(1, self.grid.shape[0] - 1):
-            result.extend((ii, jj) for jj in range(1, self.grid.shape[1] - 1) if self.grid[ii][jj] == 0)
-        return result
-
-    def get_available_cells(self):
-        free_storage = self.get_free_storage_of_grid()
-        outer_ring = []
-        try:
-            assert self.grid.shape[0] == self.grid.shape[1]  # Only for square environments
-        except AssertionError as e:
-            raise NotImplementedError from e
-        return self.get_outer_ring_with_free_storage(outer_ring, free_storage)
-
-    def get_outer_ring_with_free_storage(self, outer_ring, free_storage):
-        for pos in range(self.grid.shape[0] - 1):
-            outer_ring.extend(
-                (
-                    (0, pos),
-                    (self.grid.shape[0] - 1, pos),
-                    (pos, 0),
-                    (pos, self.grid.shape[0] - 1),
-                )
-            )
-
-        outer_ring = [
-            action
-            for action in set(outer_ring)
-            if action not in [entrypoint.position for entrypoint in self.entrypoints] + self.outpoints.outpoints
-        ]
-
-        return free_storage + outer_ring
 
     def set_signature(self, signature: dict) -> None:
         self.reset(force_clean=True)
@@ -745,11 +673,6 @@ class Storehouse(gym.Env):
             agent_grid[agent.position] = 255 if agent.got_item else 128
         return agent_grid
 
-    def __construct_av_action_grid(self, available_action_grid):
-        for action in self.get_available_actions():
-            available_action_grid[action] = 255
-        return available_action_grid
-
     def initialize_grids(self):
         return (
             np.zeros(self.grid.shape, dtype=np.uint8),
@@ -769,8 +692,6 @@ class Storehouse(gym.Env):
             state_mix = self.normalize_state(state_mix)
         self.signature = self.get_signature()
         return (state_mix if self.transpose_state else state_mix.reshape(size + (self.feature_number,))).astype("uint8")
-        # state_mix = state_mix.reshape(size + (self.feature_number,))
-        # return state_mix.transpose([2, 0, 1]) if self.transpose_state else state_mix
 
     def assert_movement(self, ag: Agent, movement: tuple) -> int:
         try:  # Checking if the new position is valid
@@ -852,8 +773,6 @@ class Storehouse(gym.Env):
             return self.return_result(reward, info)
         ####
         self.score.steps += 1
-        if self.log_flag:
-            self.log(action)
         # Update environment with the agent interaction
         if not self.done:
             reward, move_status = self.act(agent, action, info)
@@ -872,13 +791,6 @@ class Storehouse(gym.Env):
         if render:
             self.render()
         return self.return_result(reward, info)
-
-    def detect_idle(self) -> bool:
-        A = bool(self.agents[0].got_item)
-        O = bool(len(self.delivery_schedule) > 0 and self.delivery_schedule[0].ready)
-        S = bool(len(self.material))
-        E = len(ep for ep in self.entrypoints if len(ep.material_queue) > 0)
-        return (not A and not E and not O) or (not A and not E and not S)
 
     def update_timers(self):
         steps = len(self.path) - 1
