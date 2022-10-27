@@ -231,7 +231,6 @@ class Storehouse(gym.Env):
         augment: bool = None,
         random_start: bool = False,
         normalized_state: bool = False,
-        path_cost: bool = False,
         path_reward_weight: float = PATH_REWARD_PROPORTION,
         seed: int = None,  # used for random_start
         reward_function: int = 0,  # To choose between reward functions
@@ -256,7 +255,6 @@ class Storehouse(gym.Env):
         if augment is not None:
             self.augmented = augment
         self.random_start = random_start
-        self.path_cost = path_cost
         self.normalized_state = normalized_state
         self.feature_number = FEATURE_NUMBER
         self.score = Score()
@@ -474,11 +472,9 @@ class Storehouse(gym.Env):
         if macro_action_reward == -0.9:
             return -0.9
         weighted_reward = macro_action_reward
-        if self.path_cost:
-            w = self.path_reward_weight
-            micro_action_reward = self.normalize_path_cost(len(self.path) - 1, self.grid.shape)
-            weighted_reward = (1 - w) * macro_action_reward + w * micro_action_reward if micro_action_reward <= 0 else -1
-        # assert weighted_reward <= 0
+        w = self.path_reward_weight
+        micro_action_reward = self.normalize_path_cost(len(self.path) - 1, self.grid.shape)
+        weighted_reward = (1 - w) * macro_action_reward + w * micro_action_reward if micro_action_reward <= 0 else -1
         return weighted_reward
 
     def log(self, action):
@@ -885,10 +881,7 @@ class Storehouse(gym.Env):
         return (not A and not E and not O) or (not A and not E and not S)
 
     def update_timers(self):
-        if self.path_cost:
-            steps = len(self.path) - 1 if self.path_cost else 1
-        else:
-            steps = 1
+        steps = len(self.path) - 1
         self.score.timer += steps
         for box in self.material.values():
             box.update_age(steps)

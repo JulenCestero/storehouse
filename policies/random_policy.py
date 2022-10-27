@@ -31,7 +31,6 @@ def run_random_train(
     conf_name,
     max_steps,
     visualize,
-    path_cost,
     save_episodes,
     timesteps,
     random_start,
@@ -48,7 +47,6 @@ def run_random_train(
         save_episodes=save_episodes,
         conf_name=conf_name,
         max_steps=int(max_steps),
-        path_cost=path_cost,
         augment=False,
         random_start=random_start,
         path_reward_weight=path_reward_weight,
@@ -68,7 +66,6 @@ def run_random_train(
 @click.option("-v", "--visualize", default=0)
 @click.option("-r", "--random_start", default=0)
 @click.option("-se", "--save_episodes", default=False, type=int)
-@click.option("-pc", "--path_cost", default=True)
 @click.option("-t", "--timesteps", default=STEPS)
 @click.option("-w", "--path_reward_weight", default=0.0)
 @click.option("-s", "--seed", default=None, type=int)
@@ -79,7 +76,6 @@ def main(
     conf_name,
     max_steps,
     visualize,
-    path_cost,
     save_episodes,
     timesteps,
     random_start,
@@ -93,7 +89,6 @@ def main(
         conf_name,
         max_steps,
         visualize,
-        path_cost,
         save_episodes,
         timesteps,
         random_start,

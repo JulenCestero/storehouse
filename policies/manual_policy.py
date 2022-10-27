@@ -487,7 +487,6 @@ def run_manual_train(
     visualize,
     timesteps,
     save_episodes,
-    path_cost,
     random_start,
     path_reward_weight,
     seed,
@@ -507,7 +506,6 @@ def run_manual_train(
         max_steps=int(max_steps),
         augment=False,
         transpose_state=True,
-        path_cost=int(path_cost),
         random_start=int(random_start),
         path_reward_weight=path_reward_weight,
         seed=seed,
@@ -567,7 +565,6 @@ def run_manual_train(
 @click.option("-v", "--visualize", default=0)
 @click.option("-t", "--timesteps", default=STEPS)
 @click.option("-se", "--save_episodes", default=False, type=int)
-@click.option("-pc", "--path_cost", default=True)
 @click.option("-r", "--random_start", default=False)
 @click.option("-w", "--path_reward_weight", default=0.0)
 @click.option("-s", "--seed", default=None, type=int)
@@ -582,7 +579,6 @@ def main(
     visualize,
     timesteps,
     save_episodes,
-    path_cost,
     random_start,
     path_reward_weight,
     seed,
@@ -598,7 +594,6 @@ def main(
         visualize,
         timesteps,
         save_episodes,
-        path_cost,
         random_start,
         path_reward_weight,
         seed,
