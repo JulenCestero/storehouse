@@ -7,19 +7,15 @@ from math import atan2, ceil, prod
 from pathlib import Path
 from statistics import mean
 from time import time
-from typing import Iterator
 
 import gym
-import networkx as nx
 import numpy as np
-from black import out
 from colorama import Back, Fore, Style
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
-from scipy.stats import poisson
-from shapely.geometry import Point
-from shapely.geometry.polygon import Polygon
+
+# from scipy.stats import poisson
 from skimage.morphology import flood_fill
 
 CONF_NAME = "6x6fast"
