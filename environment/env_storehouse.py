@@ -229,6 +229,7 @@ class Storehouse(gym.Env):
         seed: int = None,  # used for random_start
         reward_function: int = 0,  # To choose between reward functions
         gamma: float = 0.99,
+        deterministic: bool = False,
     ):
         # logging.info(
         #     f"Logging: {logging}, save_episodes: {save_episodes}, max_steps: {max_steps}, conf_name: {conf_name}, augmented: {augment}, random_start: {random_start}, path_cost: {path_cost}, path_weights: {path_reward_weight}"
@@ -460,7 +461,7 @@ class Storehouse(gym.Env):
         consumable_types = self.get_ready_to_consume_types()
         return (
             not self.agents[0].got_item
-            and (not consumable_types or consumable_types & {box.type for box in self.material.values()})
+            and (not consumable_types or not consumable_types & {box.type for box in self.material.values()})
             and not self.get_entrypoints_with_items()
         )
 
@@ -1067,7 +1068,7 @@ class Storehouse(gym.Env):
 if __name__ == "__main__":
     from time import sleep
 
-    env = Storehouse(logging=True, random_start=False, save_episodes=False, max_steps=100)
+    env = Storehouse(logging=True, random_start=False, save_episodes=False, max_steps=100, seed=100)
     n_a = env.action_space.n
     for _ in range(10):
         env.reset(1)
