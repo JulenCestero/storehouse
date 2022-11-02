@@ -229,7 +229,6 @@ class Storehouse(gym.Env):
         seed: int = None,  # used for random_start
         reward_function: int = 0,  # To choose between reward functions
         gamma: float = 0.99,
-        deterministic: bool = False,
     ):
         # logging.info(
         #     f"Logging: {logging}, save_episodes: {save_episodes}, max_steps: {max_steps}, conf_name: {conf_name}, augmented: {augment}, random_start: {random_start}, path_cost: {path_cost}, path_weights: {path_reward_weight}"
@@ -239,7 +238,8 @@ class Storehouse(gym.Env):
         elif reward_function == 1:
             self.get_reward = self.__get_reward_1
         self.signature = {}
-        self.rng = [np.random.default_rng(seed)]
+        self.original_seed = seed
+        self.rng = [np.random.default_rng(self.original_seed)]
         self.max_id = 1
         self.gamma = gamma
         self.max_steps = max_steps
@@ -252,7 +252,6 @@ class Storehouse(gym.Env):
         self.normalized_state = normalized_state
         self.feature_number = FEATURE_NUMBER
         self.score = Score()
-        self.original_seed = seed
         self.episode = []
         self.available_actions = []
         self.logname = Path(logname)
@@ -279,7 +278,7 @@ class Storehouse(gym.Env):
         self.current_return = 0
         self.action_mask = np.zeros(len(list(range(self.action_space.n))))
         if self.random_start:
-            self.random_initial_states = self.create_random_initial_states(NUM_RANDOM_STATES, seed)
+            self.random_initial_states = self.create_random_initial_states(NUM_RANDOM_STATES)
         if save_episodes:
             self.episode_folder = self.logname / "episodes"
             self.episode_folder.mkdir(parents=True, exist_ok=True)
@@ -566,9 +565,10 @@ class Storehouse(gym.Env):
         return self.action_mask
 
     def set_signature(self, signature: dict) -> None:
+        # TODO: Check if works!!!!!!!!!!
         self.reset(force_clean=True)
         self.done = signature["done"]
-        # self.rng = [signature["rng"][0]]
+        # self.rng = [signature["rng"][0]] # ???????
         self.agents = [Agent(agent["pos"], agent["item_id"]) for agent in signature["agents"]]
         self.material = {box["id"]: Box(box["id"], box["pos"], box["type"], box["age"]) for box in signature["boxes"]}
         self.outpoints.delivery_schedule = [
@@ -593,7 +593,8 @@ class Storehouse(gym.Env):
         return {
             "max_id": self.max_id,
             "done": self.done,
-            "rng": [self.rng[0]],
+            "rng": [self.rng[0]],  # ??????????
+            #!!! self.rng[0] = np.random.default_rng(self.rng[0].bit_generator
             "boxes": [
                 {
                     "id": id_box,
@@ -878,7 +879,6 @@ class Storehouse(gym.Env):
             type=type or self.rng[0].choice(list(self.type_information.keys())),
             age=age or self.rng[0].choice(range(1, 100)),
         )
-
         self.max_id += 1
         return box
 
@@ -900,9 +900,8 @@ class Storehouse(gym.Env):
                     Delivery(type=type, prob=info["deliver"], num_boxes=num_boxes, rng=self.rng)
                 )
 
-    def create_random_initial_states(self, num_states, seed=None) -> list:
-        self.rng[0] = np.random.default_rng(seed)
-        self.original_seed = seed
+    def create_random_initial_states(self, num_states) -> list:
+        self.rng[0] = np.random.default_rng(self.original_seed)
         states = []
         print("Creating random states...")
         t0 = time()
@@ -921,6 +920,8 @@ class Storehouse(gym.Env):
         EPISODE += 1
         self.max_id = 1
         random_flag = self.random_start
+        if self.original_seed is not None:
+            self.rng[0] = np.random.default_rng(self.original_seed)
         self.signature = {}
         self.episode = []
         self.grid = np.zeros(self.grid.shape)
@@ -933,7 +934,6 @@ class Storehouse(gym.Env):
         self.outpoints.reset()
         for entrypoint in self.entrypoints:
             entrypoint.reset()
-
         if random_flag and not force_clean:
             self.set_signature(self.rng[0].choice(self.random_initial_states))
         else:
@@ -1045,7 +1045,7 @@ class Storehouse(gym.Env):
                             encoded_el = f"{Back.MAGENTA}{Fore.BLACK}{encoded_el}{Style.RESET_ALL}"
                         else:
                             encoded_el = f"{Back.WHITE}{Fore.BLACK}{encoded_el}{Style.RESET_ALL}"
-                except:
+                except Exception:
                     pass
                 maze += encoded_el
                 if e < self.grid.shape[1] - 1:
