@@ -479,6 +479,32 @@ def ehp(env: Storehouse, state: np.array, verbose=False):
         )
 
 
+def make_env(log_folder, save_episodes, conf_name, max_steps, random_start, path_reward_weight, seed, reward, gamma):
+    """
+    Utility function for multiprocessed env.
+
+    :param env_id: (str) the environment ID
+    :param num_env: (int) the number of environment you wish to have in subprocesses
+    :param seed: (int) the inital seed for RNG
+    :param rank: (int) index of the subprocess
+    :return: (Callable)
+    """
+    return Storehouse(
+        log_folder or "log/log",
+        logging=bool(log_folder),
+        save_episodes=save_episodes,
+        conf_name=conf_name,
+        max_steps=int(max_steps),
+        augment=False,
+        transpose_state=True,
+        random_start=int(random_start),
+        path_reward_weight=path_reward_weight,
+        seed=seed,
+        reward_function=reward,
+        gamma=gamma,
+    )
+
+
 def run_manual_train(
     log_folder,
     policy,
@@ -498,20 +524,8 @@ def run_manual_train(
     global SLEEP_TIME
     VISUAL = int(visualize)
     SLEEP_TIME = 0.2 if visualize else 0.00
-    env = Storehouse(
-        log_folder or "log/log",
-        logging=bool(log_folder),
-        save_episodes=save_episodes,
-        conf_name=conf_name,
-        max_steps=int(max_steps),
-        augment=False,
-        transpose_state=True,
-        random_start=int(random_start),
-        path_reward_weight=path_reward_weight,
-        seed=seed,
-        reward_function=reward,
-        gamma=gamma,
-    )
+    num_cpu = 4
+    env = make_env(log_folder, save_episodes, conf_name, max_steps, random_start, path_reward_weight, seed, reward, gamma)
     if mdp:
         data = {"state": [], "action": [], "reward": [], "next_state": [], "done": []}
     s = env.reset(VISUAL)
