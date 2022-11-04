@@ -14,7 +14,6 @@ from colorama import Back, Fore, Style
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
-
 # from scipy.stats import poisson
 from skimage.morphology import flood_fill
 
@@ -561,6 +560,7 @@ class Storehouse(gym.Env):
                 maze[tuple(pos)] = 0.5
             for op in self.outpoints.outpoints:
                 maze[op] = 0
+        maze[agent.position] = 0
         self.action_mask = maze.reshape(-1) == 0.5
         return self.action_mask
 
