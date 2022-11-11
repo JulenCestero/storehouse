@@ -14,6 +14,7 @@ from colorama import Back, Fore, Style
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
+
 # from scipy.stats import poisson
 from skimage.morphology import flood_fill
 
@@ -464,10 +465,10 @@ class Storehouse(gym.Env):
         )
 
     def get_reward(self, move_status: int) -> float:
-        if self.check_idle():
-            return 0
-        elif move_status == 0:  # Invalid action
+        if move_status == 0:  # Invalid action
             return -1
+        elif self.check_idle():
+            return 0
         elif move_status == 1:  # Take from EP
             return -0.6
         elif move_status == 2:  # Take from grid
@@ -922,6 +923,8 @@ class Storehouse(gym.Env):
         random_flag = self.random_start
         if self.original_seed is not None:
             self.rng[0] = np.random.default_rng(self.original_seed)
+        else:
+            self.rng[0] = np.random.default_rng()
         self.signature = {}
         self.episode = []
         self.grid = np.zeros(self.grid.shape)
@@ -1076,7 +1079,8 @@ if __name__ == "__main__":
         done = False
         t = 0
         while not done and t < 105:
-            a = np.random.choice(n_a)
+            # a = np.random.choice(n_a)
+            a = 24
             s, r, done, inf = env.step(a)
             # print(f"Action: {env.norm_action(a)}, Reward: {r}, Info: {inf}")
             env.render()
