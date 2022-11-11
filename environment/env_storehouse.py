@@ -3,7 +3,7 @@ import json
 import logging
 import operator
 import os
-from math import atan2, ceil, prod
+from math import ceil, prod
 from pathlib import Path
 from statistics import mean
 from time import time
@@ -1079,8 +1079,7 @@ if __name__ == "__main__":
         done = False
         t = 0
         while not done and t < 105:
-            # a = np.random.choice(n_a)
-            a = 24
+            a = np.random.choice(n_a)
             s, r, done, inf = env.step(a)
             # print(f"Action: {env.norm_action(a)}, Reward: {r}, Info: {inf}")
             env.render()
