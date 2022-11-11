@@ -1,5 +1,6 @@
 import copy
 import operator
+import pickle as pkl
 import pprint
 from time import sleep
 
@@ -8,12 +9,14 @@ import numpy as np
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
-from storehouse.environment.env_storehouse import Storehouse
+from storehouse.environment.env_storehouse import TYPE_CODIFICATION, Storehouse
 from tqdm import tqdm
 
+TYPE_COMB_CODIFICATION = {50: ["A"], 100: ["B"], 150: ["A", "B"]}
 STEPS = 100000
 SLEEP_TIME = 0.00
 VISUAL = True
+AUGMENT_FACTOR = 6
 
 
 def store_item(env: Storehouse, waiting_items: list):
@@ -198,7 +201,7 @@ def decode_material(encoded_material: list) -> set:
 
 
 def denormalize_out_state(state: float, num_types: int) -> int:
-    return int(state / 255 * (2 ** num_types - 1))
+    return int(state / 255 * (2**num_types - 1))
 
 
 def deserialize_out_state(state: int) -> list:
@@ -216,13 +219,20 @@ def get_ready_to_consume_items_from_state(s: np.array, out_position: list, num_t
     outpoint_state = box_grid[out_position]
     if outpoint_state == 0:
         return []
-    denormalized_out_state = denormalize_out_state(outpoint_state, num_types)
-    wanted_material_encoded = deserialize_out_state(denormalized_out_state)
-    return decode_material(wanted_material_encoded)
+    # denormalized_out_state = denormalize_out_state(outpoint_state, num_types)
+    # wanted_material_encoded = deserialize_out_state(denormalized_out_state)
+    # return decode_material(wanted_material_encoded)
+    else:
+        return TYPE_COMB_CODIFICATION[outpoint_state]
 
 
 def denormalize_type(encoded_type: int, num_types: int) -> str:
-    return int_to_type(int(encoded_type / 255 * num_types) - 1)
+    # return int_to_type(int(encoded_type / 255 * num_types) - 1)
+    try:
+        return [key for key, value in TYPE_CODIFICATION.items() if encoded_type == value][0]
+    except KeyError:
+        print("denormalize_type")
+        raise
 
 
 class EntrypointBox:
@@ -261,23 +271,25 @@ def get_ready_boxes_in_grid(s: np.array, ready_types: set, num_types: int) -> li
     box_grid = s[0]
     available_boxes = {}
     for ii, row in enumerate(box_grid):
+        if ii == box_grid.shape[0] - 1:
+            continue
         for jj, val in enumerate(row):
             if val > 0:
                 available_boxes[(ii, jj)] = denormalize_type(val, num_types)
     return [pos for pos, box in available_boxes.items() if box in ready_types]
 
 
-def filter_age_grid(age_grid: np.array, ready_boxes: list) -> np.array:
+def filter_age_grid(age_grid: np.array, ready_boxes: list, entrypoints, outpoints) -> np.array:
     grid = age_grid
     mask = np.zeros(grid.shape)
     for box in ready_boxes:
-        if check_reachable(grid, (1, 0), box):
+        if check_reachable(grid, (1, 0), box, entrypoints, outpoints):
             mask[box] = 1
     return np.multiply(grid, mask)
 
 
-def get_oldest_box(age_grid: np.array, ready_boxes: list) -> tuple:
-    grid = filter_age_grid(age_grid, ready_boxes)
+def get_oldest_box(age_grid: np.array, ready_boxes: list, entrypoints, outpoints) -> tuple:
+    grid = filter_age_grid(age_grid, ready_boxes, entrypoints, outpoints)
     oldest_boxes = get_max_position(grid)
     return oldest_boxes[0]
 
@@ -297,9 +309,9 @@ def check_reset(env, done) -> np.array:
     return None
 
 
-def take_item_from_grid(state, ready_boxes) -> np.array:
+def take_item_from_grid(state, ready_boxes, entrypoints, outpoints) -> np.array:
     age_grid = state[1]
-    return get_oldest_box(age_grid, ready_boxes)
+    return get_oldest_box(age_grid, ready_boxes, entrypoints, outpoints)
 
 
 def deliver_box(outpoint_position):
@@ -310,26 +322,34 @@ def take_item_from_ep(ep: list) -> int:  # Return action
     return max(ep, key=operator.attrgetter("age")).pos
 
 
-def deposit_item_in_grid(state: np.array) -> np.array:
+def deposit_item_in_grid(state: np.array, entrypoints, outpoints) -> np.array:
     age_grid = state[1]
     agent_grid = state[2]
-    target_cell = find_target_cell(age_grid)
-    return None if target_cell is None else target_cell
+    agent_position = get_max_position(agent_grid)[0]
+    target_cell = find_target_cell(age_grid, entrypoints, outpoints, agent_position)
+    return (4, 0) if target_cell is None else target_cell
 
 
 def idle():
     return (0, 1)
 
 
-def prepare_grid(matrix: np.array, start: tuple, end: tuple) -> Grid:
-    prepared_matrix = matrix
+def prepare_grid(matrix: np.array, start: tuple, end: tuple, whitelist: list = []) -> Grid:
+    prepared_matrix = np.array(matrix, dtype="int16")
     prepared_matrix[start] = 0
     prepared_matrix[end] = 0
+    for cell in whitelist:
+        prepared_matrix[cell] = 0
     return Grid(matrix=np.negative(prepared_matrix) + 1)
 
 
-def check_reachable(matrix: np.array, start_cell: tuple, end_cell: tuple) -> bool:
-    grid = prepare_grid(copy.deepcopy(matrix), start_cell, end_cell)
+def check_reachable(matrix: np.array, start_cell: tuple, end_cell: tuple, entrypoints: list, outpoints: list) -> bool:
+    grid = prepare_grid(
+        copy.deepcopy(matrix),
+        start_cell,
+        end_cell,
+        whitelist=entrypoints + outpoints,
+    )
     start = grid.node(*reversed(start_cell))
     end = grid.node(*reversed(end_cell))
     finder = AStarFinder(diagonal_movement=DiagonalMovement.never)
@@ -337,12 +357,12 @@ def check_reachable(matrix: np.array, start_cell: tuple, end_cell: tuple) -> boo
     return len(path)
 
 
-def find_target_cell(grid: np.array) -> tuple:  # TODO: Change to  pathfinding
+def find_target_cell(grid: np.array, entrypoints, outpoints, agent_position) -> tuple:
     target_cell = None
     for ii in range(1, grid.shape[0] - 1):
         for jj in range(1, grid.shape[1] - 1):
             if grid[ii][jj] == 0:
-                if not check_reachable(grid, (1, 0), (ii, jj)):
+                if not check_reachable(grid, agent_position, (ii, jj), entrypoints, outpoints):
                     continue
                 target_cell = (ii, jj)
                 break
@@ -375,21 +395,31 @@ def drop_box(
     state: np.array,
     agent_item_type: list,
     ready_to_consume_types: list,
-    outpoint_positions: tuple,
+    outpoint_positions: list,
+    entrypoint_positions: list,
     verbose=False,
 ) -> np.array:
     if all(item_type not in ready_to_consume_types for item_type in agent_item_type if len(ready_to_consume_types)):
-        return (deposit_item_in_grid(state), "deposit item in grid") if verbose else deposit_item_in_grid(state)
-    outpoint_position = get_nearest_outpoint(state[2], state[1], outpoint_positions)
+        return (
+            (deposit_item_in_grid(state, entrypoint_positions, outpoint_positions), "deposit item in grid")
+            if verbose
+            else deposit_item_in_grid(state, entrypoint_positions, outpoint_positions)
+        )
+    outpoint_position = get_nearest_outpoint(state[2], state[1], outpoint_positions, entrypoint_positions)
     return (deliver_box(outpoint_position), "deliver box") if verbose else deliver_box(outpoint_position)
 
 
 def take_box(
-    state: np.array, ready_to_consume_types: list, entrypoints_with_items: list, num_types: int, verbose=False
+    state: np.array,
+    ready_to_consume_types: list,
+    entrypoints_with_items: list,
+    num_types: int,
+    entrypoints,
+    outpoints,
+    verbose=False,
 ) -> np.array:
-    ready_boxes = get_ready_boxes_in_grid(state, ready_to_consume_types, num_types)
-    if len(ready_boxes):
-        action = take_item_from_grid(state, ready_boxes)
+    if len(ready_boxes := get_ready_boxes_in_grid(state, ready_to_consume_types, num_types)):
+        action = take_item_from_grid(state, ready_boxes, entrypoints, outpoints)
         return (action, "take item from grid") if verbose else action
     elif len(entrypoints_with_items):
         action = take_item_from_ep(entrypoints_with_items)
@@ -405,15 +435,15 @@ def act(env: Storehouse, action: tuple, act_verbose: str = "") -> tuple:
     else:
         done = True
         reward = 0
-    s = check_reset(env, done)
-    state = state if s is None else s
+        state = env.get_state()
+        info = {}
     sleep(SLEEP_TIME)
-    return state, reward
+    return state, reward, done, info
 
 
-def get_nearest_outpoint(agent_grid: np.array, box_grid, outpoints: list):
+def get_nearest_outpoint(agent_grid: np.array, box_grid, outpoints: list, entrypoints):
     agent_position = get_max_position(agent_grid)[0]
-    out_score = {pos: check_reachable(box_grid, agent_position, pos) for pos in outpoints}
+    out_score = {pos: check_reachable(box_grid, agent_position, pos, entrypoints, outpoints) for pos in outpoints}
     return min(out_score, key=out_score.get)
 
 
@@ -428,15 +458,118 @@ def ehp(env: Storehouse, state: np.array, verbose=False):
     # Static information
     outpoint_positions = env.outpoints.outpoints
     num_types = len(env.type_information)
-    entrypoint_position = [ep.position for ep in env.entrypoints]
+    entrypoint_positions = [ep.position for ep in env.entrypoints]
     ####
     ready_to_consume_types = get_ready_to_consume_items_from_state(state, outpoint_positions[0], num_types)
-    entrypoints_with_items = get_ep_with_items_from_state(state, entrypoint_position, num_types)
+    entrypoints_with_items = get_ep_with_items_from_state(state, entrypoint_positions, num_types)
     agent_item_type = get_agent_item_type(state, num_types)
     if len(agent_item_type):
-        return drop_box(state, agent_item_type, ready_to_consume_types, outpoint_positions, verbose)
+        return drop_box(
+            state, agent_item_type, ready_to_consume_types, outpoint_positions, entrypoint_positions, verbose=verbose
+        )
     else:
-        return take_box(state, ready_to_consume_types, entrypoints_with_items, num_types, verbose)
+        return take_box(
+            state,
+            ready_to_consume_types,
+            entrypoints_with_items,
+            num_types,
+            entrypoint_positions,
+            outpoint_positions,
+            verbose=verbose,
+        )
+
+
+def make_env(log_folder, save_episodes, conf_name, max_steps, random_start, path_reward_weight, seed, reward, gamma):
+    """
+    Utility function for multiprocessed env.
+
+    :param env_id: (str) the environment ID
+    :param num_env: (int) the number of environment you wish to have in subprocesses
+    :param seed: (int) the inital seed for RNG
+    :param rank: (int) index of the subprocess
+    :return: (Callable)
+    """
+    return Storehouse(
+        log_folder or "log/log",
+        logging=bool(log_folder),
+        save_episodes=save_episodes,
+        conf_name=conf_name,
+        max_steps=int(max_steps),
+        augment=False,
+        transpose_state=True,
+        random_start=int(random_start),
+        path_reward_weight=path_reward_weight,
+        seed=seed,
+        reward_function=reward,
+        gamma=gamma,
+    )
+
+
+def run_manual_train(
+    log_folder,
+    policy,
+    conf_name,
+    max_steps,
+    visualize,
+    timesteps,
+    save_episodes,
+    random_start,
+    path_reward_weight,
+    seed,
+    mdp,
+    reward,
+    gamma,
+):
+    global VISUAL
+    global SLEEP_TIME
+    VISUAL = int(visualize)
+    SLEEP_TIME = 0.2 if visualize else 0.00
+    num_cpu = 4
+    env = make_env(log_folder, save_episodes, conf_name, max_steps, random_start, path_reward_weight, seed, reward, gamma)
+    if mdp:
+        data = {"state": [], "action": [], "reward": [], "next_state": [], "done": []}
+    s = env.reset(VISUAL)
+    cum_reward = []
+    cum_deliveries = []
+    if not VISUAL:
+        pbar = tqdm(total=timesteps)
+    for _ in range(timesteps):
+        if policy == "ehp_old":
+            enhanced_human_policy(env, s)
+        elif policy == "ihp":
+            initial_human_policy(env, s)
+        elif policy == "ehp":
+            action, act_info = ehp(env, s, verbose=True)
+            n_s, r, done, info = act(env, action, act_info)
+            if r == -1:
+                # print("Pochillo...")
+                pass
+                # import pdb
+
+                # pdb.set_trace()
+            if mdp:
+                data["state"].append(env.augment_state(s[0], s[1], s[2], AUGMENT_FACTOR))
+                data["action"].append(env.denorm_action(action))
+                data["reward"].append(r)
+                data["next_state"].append(env.augment_state(n_s[0], n_s[1], n_s[2], AUGMENT_FACTOR))
+                data["done"].append(done)
+            s = n_s
+            if done:
+                cum_reward.append(env.current_return)
+                cum_deliveries.append(env.score.delivered_boxes)
+                s = env.reset()
+                if VISUAL:
+                    print("######################")
+        else:
+            raise NotImplementedError
+        if not VISUAL:
+            pbar.update(1)
+    print(
+        f"Finish! Results saved in {log_folder}.\nMean score: {np.mean(cum_reward)}. Delivered boxes: {np.mean(cum_deliveries)}"
+    )
+    if mdp:
+        with open("mdp.pkl", "wb") as f:
+            pkl.dump(data, f)
 
 
 @click.command()
@@ -447,10 +580,12 @@ def ehp(env: Storehouse, state: np.array, verbose=False):
 @click.option("-v", "--visualize", default=0)
 @click.option("-t", "--timesteps", default=STEPS)
 @click.option("-se", "--save_episodes", default=False, type=int)
-@click.option("-pc", "--path_cost", default=False)
-@click.option("-r", "--random_Start", default=False)
-@click.option("-w", "--path_reward_weight", default=0.5)
+@click.option("-r", "--random_start", default=False)
+@click.option("-w", "--path_reward_weight", default=0.0)
 @click.option("-s", "--seed", default=None, type=int)
+@click.option("-mdp", "--mdp", default=False, type=bool)
+@click.option("-rw", "--reward", default=0, type=int)
+@click.option("-g", "--gamma", default=0.99, type=float)
 def main(
     log_folder,
     policy,
@@ -459,49 +594,28 @@ def main(
     visualize,
     timesteps,
     save_episodes,
-    path_cost,
     random_start,
     path_reward_weight,
     seed,
+    mdp,
+    reward,
+    gamma,
 ):
-    global VISUAL
-    global SLEEP_TIME
-    VISUAL = int(visualize)
-    SLEEP_TIME = 0.2 if visualize else 0.00
-    env = Storehouse(
-        log_folder or "log/log",
-        logging=bool(log_folder),
-        save_episodes=save_episodes,
-        conf_name=conf_name,
-        max_steps=int(max_steps),
-        augment=False,
-        transpose_state=True,
-        path_cost=int(path_cost),
-        random_start=int(random_start),
-        path_reward_weight=path_reward_weight,
-        seed=seed,
+    run_manual_train(
+        log_folder,
+        policy,
+        conf_name,
+        max_steps,
+        visualize,
+        timesteps,
+        save_episodes,
+        random_start,
+        path_reward_weight,
+        seed,
+        mdp,
+        reward,
+        gamma,
     )
-    s = env.reset(VISUAL)
-    cum_reward = 0
-    if not VISUAL:
-        pbar = tqdm(total=timesteps)
-    for _ in range(timesteps):
-        if policy == "ehp_old":
-            enhanced_human_policy(env, s)
-        elif policy == "ihp":
-            initial_human_policy(env, s)
-        elif policy == "ehp":
-            action, act_info = ehp(env, s, verbose=True)
-            s, r = act(env, action, act_info)
-            if r == -1:
-                prueba = True
-                print(prueba)
-            cum_reward += r
-        else:
-            raise NotImplementedError
-        if not VISUAL:
-            pbar.update(1)
-    print(f"Finish! Results saved in {log_folder}.\nMean score: {cum_reward}")
 
 
 if __name__ == "__main__":

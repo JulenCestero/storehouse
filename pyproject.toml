@@ -8,9 +8,9 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.8, <3.10"
-numpy = "1.21.2"
-gym = "0.19"
+python = "^3.8, <3.11"
+numpy = "1.23.2"
+gym = "0.21"
 colorama = "^0.4.4"
 
 [tool.poetry.dev-dependencies]
