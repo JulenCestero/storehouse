@@ -416,7 +416,7 @@ class Storehouse(gym.Env):
 
     @staticmethod
     def normalize_path_cost(cost: int, grid_shape: tuple) -> float:
-        return -cost / (prod(grid_shape) / 2)
+        return -cost / (np.prod(grid_shape) / 2)
 
     def __new_reward(self):
         """
