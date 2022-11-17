@@ -416,7 +416,7 @@ class Storehouse(gym.Env):
 
     @staticmethod
     def normalize_path_cost(cost: int, grid_shape: tuple) -> float:
-        return -cost / (np.prod(grid_shape) / 2)
+        return -cost / (prod(grid_shape) / 2)
 
     def __new_reward(self):
         """
@@ -566,10 +566,9 @@ class Storehouse(gym.Env):
         return self.action_mask
 
     def set_signature(self, signature: dict) -> None:
-        # TODO: Check if works!!!!!!!!!!
         self.reset(force_clean=True)
         self.done = signature["done"]
-        # self.rng = [signature["rng"][0]] # ???????
+        self.rng[0].bit_generator.state = signature["rng"]
         self.agents = [Agent(agent["pos"], agent["item_id"]) for agent in signature["agents"]]
         self.material = {box["id"]: Box(box["id"], box["pos"], box["type"], box["age"]) for box in signature["boxes"]}
         self.outpoints.delivery_schedule = [
@@ -594,8 +593,7 @@ class Storehouse(gym.Env):
         return {
             "max_id": self.max_id,
             "done": self.done,
-            "rng": [self.rng[0]],  # ??????????
-            #!!! self.rng[0] = np.random.default_rng(self.rng[0].bit_generator
+            "rng": self.rng[0].bit_generator.state,
             "boxes": [
                 {
                     "id": id_box,
@@ -724,7 +722,7 @@ class Storehouse(gym.Env):
         size = state_mix[0].shape
         if self.normalized_state:
             state_mix = self.normalize_state(state_mix)
-        self.signature = self.get_signature()
+        # self.signature = self.get_signature()
         return (state_mix if self.transpose_state else state_mix.reshape(size + (self.feature_number,))).astype("uint8")
 
     def assert_movement(self, ag: Agent, movement: tuple) -> int:
