@@ -14,7 +14,6 @@ from colorama import Back, Fore, Style
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
-
 # from scipy.stats import poisson
 from skimage.morphology import flood_fill
 
@@ -222,7 +221,7 @@ class Storehouse(gym.Env):
         transpose_state: bool = False,
         max_steps: int = MAX_MOVEMENTS,
         conf_name: str = CONF_NAME,
-        augment: bool = None,
+        augment: bool = False,
         random_start: bool = False,
         normalized_state: bool = False,
         path_reward_weight: float = PATH_REWARD_PROPORTION,
@@ -246,8 +245,7 @@ class Storehouse(gym.Env):
         self.log_flag = logging
         self.path_reward_weight = path_reward_weight
         self.load_conf(conf_name)
-        if augment is not None:
-            self.augmented = augment
+        self.augmented = augment
         self.random_start = random_start
         self.normalized_state = normalized_state
         self.feature_number = FEATURE_NUMBER
@@ -299,7 +297,7 @@ class Storehouse(gym.Env):
         """
         with open(os.path.join(os.path.dirname(__file__), "conf.json"), "r") as f:
             current_conf = json.load(f)[conf]
-        self.augmented = any(length < MIN_CNN_LEN for length in current_conf["grid"])
+        # self.augmented = any(length < MIN_CNN_LEN for length in current_conf["grid"])
         self.grid = np.zeros(current_conf["grid"])
         conf = current_conf["conf"]
         self.type_information = conf["material_types"]
