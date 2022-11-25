@@ -9,14 +9,16 @@ import numpy as np
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
-from storehouse.environment.env_storehouse import TYPE_CODIFICATION, Storehouse
 from tqdm import tqdm
+
+from storehouse.environment.env_storehouse import TYPE_CODIFICATION, Storehouse
 
 TYPE_COMB_CODIFICATION = {50: ["A"], 100: ["B"], 150: ["A", "B"]}
 STEPS = 100000
 SLEEP_TIME = 0.00
 VISUAL = True
 AUGMENT_FACTOR = 6
+env = None
 
 
 def store_item(env: Storehouse, waiting_items: list):
@@ -251,30 +253,14 @@ def get_ep_with_items_from_state(s: np.array, ep_position: list, num_types: int)
     return [EntrypointBox(pos, age_grid[pos], denormalize_type(ep, num_types)) for pos, ep in ep_state.items() if ep]
 
 
-# def filter_restricted_boxes(grid: np.array, num_types: int) -> dict:
-#     adjacent_cells_delta = [(0, 1), (0, -1), (1, 0), (-1, 0)]
-#     boxes = {}
-#     for row in range(1, grid.shape[0] - 1):
-#         for col in range(1, grid.shape[1] - 1):
-#             flag = True
-#             for delta in adjacent_cells_delta:
-#                 adjacent_cell = tuple(map(operator.add, (row, col), delta))
-#                 if grid[adjacent_cell] == 0:
-#                     flag = False
-#                     break
-#             if not flag and grid[row][col] > 0:  # Not restricted_cell and cell with item
-#                 boxes[(row, col)] = denormalize_type(grid[row][col], num_types)
-#     return boxes  # form {pos: type}
-
-
-def get_ready_boxes_in_grid(s: np.array, ready_types: set, num_types: int) -> list:
+def get_ready_boxes_in_grid(s: np.array, ready_types: set, num_types: int, agent_position: tuple) -> list:
     box_grid = s[0]
     available_boxes = {}
     for ii, row in enumerate(box_grid):
         if ii == box_grid.shape[0] - 1:
             continue
         for jj, val in enumerate(row):
-            if val > 0:
+            if val > 0 and (ii, jj) != agent_position and check_reachable(box_grid, agent_position, (ii, jj)):
                 available_boxes[(ii, jj)] = denormalize_type(val, num_types)
     return [pos for pos, box in available_boxes.items() if box in ready_types]
 
@@ -283,7 +269,7 @@ def filter_age_grid(age_grid: np.array, ready_boxes: list, entrypoints, outpoint
     grid = age_grid
     mask = np.zeros(grid.shape)
     for box in ready_boxes:
-        if check_reachable(grid, (1, 0), box, entrypoints, outpoints):
+        if check_reachable(grid, (1, 0), box, whitelist=entrypoints + outpoints):
             mask[box] = 1
     return np.multiply(grid, mask)
 
@@ -327,11 +313,15 @@ def deposit_item_in_grid(state: np.array, entrypoints, outpoints) -> np.array:
     agent_grid = state[2]
     agent_position = get_max_position(agent_grid)[0]
     target_cell = find_target_cell(age_grid, entrypoints, outpoints, agent_position)
-    return (4, 0) if target_cell is None else target_cell
+    # return (4, 0) if target_cell is None else target_cell
+    if target_cell is None:
+        return (3, 0) if agent_position == (4, 0) else (4, 0)
+    else:
+        return target_cell
 
 
-def idle():
-    return (0, 1)
+def idle(agent_position):
+    return (0, 2) if agent_position == (0, 1) else (0, 1)
 
 
 def prepare_grid(matrix: np.array, start: tuple, end: tuple, whitelist: list = []) -> Grid:
@@ -343,12 +333,12 @@ def prepare_grid(matrix: np.array, start: tuple, end: tuple, whitelist: list = [
     return Grid(matrix=np.negative(prepared_matrix) + 1)
 
 
-def check_reachable(matrix: np.array, start_cell: tuple, end_cell: tuple, entrypoints: list, outpoints: list) -> bool:
+def check_reachable(matrix: np.array, start_cell: tuple, end_cell: tuple, whitelist: list = []) -> bool:
     grid = prepare_grid(
         copy.deepcopy(matrix),
         start_cell,
         end_cell,
-        whitelist=entrypoints + outpoints,
+        whitelist=whitelist,
     )
     start = grid.node(*reversed(start_cell))
     end = grid.node(*reversed(end_cell))
@@ -362,7 +352,7 @@ def find_target_cell(grid: np.array, entrypoints, outpoints, agent_position) -> 
     for ii in range(1, grid.shape[0] - 1):
         for jj in range(1, grid.shape[1] - 1):
             if grid[ii][jj] == 0:
-                if not check_reachable(grid, agent_position, (ii, jj), entrypoints, outpoints):
+                if not check_reachable(grid, agent_position, (ii, jj), whitelist=entrypoints + outpoints):
                     continue
                 target_cell = (ii, jj)
                 break
@@ -416,16 +406,17 @@ def take_box(
     num_types: int,
     entrypoints,
     outpoints,
+    agent_position,
     verbose=False,
 ) -> np.array:
-    if len(ready_boxes := get_ready_boxes_in_grid(state, ready_to_consume_types, num_types)):
+    if len(ready_boxes := get_ready_boxes_in_grid(state, ready_to_consume_types, num_types, agent_position)):
         action = take_item_from_grid(state, ready_boxes, entrypoints, outpoints)
         return (action, "take item from grid") if verbose else action
     elif len(entrypoints_with_items):
         action = take_item_from_ep(entrypoints_with_items)
         return (action, "take item from ep") if verbose else action
     else:
-        return (idle(), "idle") if verbose else idle()
+        return (idle(agent_position), "idle") if verbose else idle(agent_position)
 
 
 def act(env: Storehouse, action: tuple, act_verbose: str = "") -> tuple:
@@ -443,7 +434,7 @@ def act(env: Storehouse, action: tuple, act_verbose: str = "") -> tuple:
 
 def get_nearest_outpoint(agent_grid: np.array, box_grid, outpoints: list, entrypoints):
     agent_position = get_max_position(agent_grid)[0]
-    out_score = {pos: check_reachable(box_grid, agent_position, pos, entrypoints, outpoints) for pos in outpoints}
+    out_score = {pos: check_reachable(box_grid, agent_position, pos, whitelist=entrypoints + outpoints) for pos in outpoints}
     return min(out_score, key=out_score.get)
 
 
@@ -463,6 +454,7 @@ def ehp(env: Storehouse, state: np.array, verbose=False):
     ready_to_consume_types = get_ready_to_consume_items_from_state(state, outpoint_positions[0], num_types)
     entrypoints_with_items = get_ep_with_items_from_state(state, entrypoint_positions, num_types)
     agent_item_type = get_agent_item_type(state, num_types)
+    agent_position = get_max_position(state[2])[0]
     if len(agent_item_type):
         return drop_box(
             state, agent_item_type, ready_to_consume_types, outpoint_positions, entrypoint_positions, verbose=verbose
@@ -475,6 +467,7 @@ def ehp(env: Storehouse, state: np.array, verbose=False):
             num_types,
             entrypoint_positions,
             outpoint_positions,
+            agent_position,
             verbose=verbose,
         )
 
@@ -522,6 +515,7 @@ def run_manual_train(
 ):
     global VISUAL
     global SLEEP_TIME
+    global env
     VISUAL = int(visualize)
     SLEEP_TIME = 0.2 if visualize else 0.00
     num_cpu = 4
@@ -541,8 +535,10 @@ def run_manual_train(
         elif policy == "ehp":
             action, act_info = ehp(env, s, verbose=True)
             n_s, r, done, info = act(env, action, act_info)
+            if all(env.action_mask == 0):
+                print("oh oh...")
             if r == -1:
-                # print("Pochillo...")
+                print("Pochillo...")
                 pass
                 # import pdb
 

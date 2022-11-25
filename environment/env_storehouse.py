@@ -39,8 +39,6 @@ class Score:
     def reset(self):
         self.delivered_boxes = 0
         self.filled_orders = 0
-        self.clear_run_score = 0
-        self.ultra_negative_achieved = False
         self.steps = 0
         self.box_ages = []
         self.non_optimal_material = 0
@@ -50,17 +48,40 @@ class Score:
         self.seed = 0
         self.returns = []
         self.discounted_return = 0
+        self.num_invalid = 0
+
+    def print_header(self) -> str:
+        return (
+            f"Score,"
+            f"Discounted return,"
+            f"Delivered Boxes,"
+            f"Filled orders,"
+            f"Total orders,"
+            f"Mean box ages,"
+            f"FIFO violation,"
+            f"Invalid actions,"
+            f"max_id,"
+            f"Steps,"
+            f"time,"
+            f"Seed"
+            f"\n"
+        )
 
     def print_score(self) -> str:
         return (
-            f"{self.delivered_boxes}, {self.filled_orders}, {self.clear_run_score}, {self.steps},"
-            f"{self.ultra_negative_achieved}, {mean(self.box_ages)},"
-            f"{self.non_optimal_material / max(1, self.delivered_boxes) * 100},"
-            f"{self.timer},"
-            f"{self.max_id},"
+            f"{sum(self.returns)},"
+            f"{self.discounted_return},"
+            f"{self.delivered_boxes},"
+            f"{self.filled_orders},"
             f"{self.total_orders},"
-            f"{self.seed},"
-            f"{self.discounted_return}"
+            f"{mean(self.box_ages)},"
+            f"{self.non_optimal_material / max(1, self.delivered_boxes) * 100},"
+            f"{self.num_invalid},"
+            f"{self.max_id},"
+            f"{self.steps},"
+            f"{self.timer},"
+            f"{self.seed}"
+            f"\n"
         )
 
 
@@ -272,9 +293,10 @@ class Storehouse(gym.Env):
         self.floor_graph = None
         self.path = []
         self.num_actions = 0
-        self.num_invalid = 0
         self.current_return = 0
         self.action_mask = np.zeros(len(list(range(self.action_space.n))))
+        self.outern_crown = self.declare_outern_crown()
+        self.full_storage_flag = False
         if self.random_start:
             self.random_initial_states = self.create_random_initial_states(NUM_RANDOM_STATES)
         if save_episodes:
@@ -284,9 +306,7 @@ class Storehouse(gym.Env):
             self.logname.mkdir(parents=True, exist_ok=True)
             self.metrics_log = f"{str(self.logname / self.logname.name)}_metrics.csv"
             with open(self.metrics_log, "a") as f:
-                f.write(
-                    "Delivered Boxes,Filled orders,Score,Steps,Ultra negative achieved,Mean box ages,FIFO violation,time,max_id,Total orders,Seed,Discounted return\n"
-                )
+                f.write(self.score.print_header())
 
     def load_conf(self, conf: str = CONF_NAME):
         """
@@ -311,6 +331,20 @@ class Storehouse(gym.Env):
             rng=self.rng,
         )
         self.num_agents = conf["num_agents"]
+
+    def declare_outern_crown(self):
+        shape_x, shape_y = self.grid.shape
+        crown = []
+        for ii in range(shape_x):
+            crown.extend(((ii, 0), (ii, shape_y - 1)))
+        for ii in range(shape_y):
+            crown.extend(((0, ii), (shape_x - 1, ii)))
+        crown = list(set(crown))
+        for op in self.outpoints.outpoints:
+            crown.remove(op)
+        for ep in self.entrypoints:
+            crown.remove(ep.position)
+        return crown
 
     def outpoints_consume(self):  # sourcery skip: raise-specific-error
         """
@@ -465,6 +499,10 @@ class Storehouse(gym.Env):
     def get_reward(self, move_status: int) -> float:
         if move_status == 0:  # Invalid action
             return -1
+        elif move_status == 4:  # Drop in OP
+            return self.delivery_reward(self.material[self.grid[self.agents[0].position]])
+        elif move_status == 6:  # Storage full
+            return -0.8
         elif self.check_idle():
             return 0
         elif move_status == 1:  # Take from EP
@@ -473,12 +511,8 @@ class Storehouse(gym.Env):
             return -0.7
         elif move_status == 3:  # Procrastinate
             return -0.9
-        elif move_status == 4:  # Drop in OP
-            return self.delivery_reward(self.material[self.grid[self.agents[0].position]])
         elif move_status == 5:  # Drop in grid
             return -0.5
-        elif move_status == 6:  # Storage full
-            return -0.8
         else:
             return -1
 
@@ -507,7 +541,7 @@ class Storehouse(gym.Env):
         if not len(self.score.box_ages):
             self.score.box_ages.append(0)
         with open(self.metrics_log, "a") as f:
-            f.write(self.score.print_score() + "\n")
+            f.write(self.score.print_score())
         if self.save_episodes:
             with open(f"{self.episode_folder / self.logname.name}_episode_{EPISODE}.json", "w") as f:
                 json.dump(self.episode, f)
@@ -538,7 +572,7 @@ class Storehouse(gym.Env):
         return False
 
     def get_available_actions(self) -> list:
-        # Get reachable cells
+        # Get reachable cells (0.5 ==> reachable)
         agent = self.agents[0]
         maze = np.array(self.grid)
         for ep in self.entrypoints:
@@ -548,6 +582,9 @@ class Storehouse(gym.Env):
         maze[agent.position] = 0
         maze = flood_fill(maze, agent.position, 0.5, connectivity=1)
         if agent.got_item:
+            if self.check_full_storage():
+                for cell in self.outern_crown:
+                    maze[cell] = 0.5
             for ep in self.entrypoints:
                 maze[ep.position] = 0
             if self.material[agent.got_item].type not in self.get_ready_to_consume_types():
@@ -723,6 +760,18 @@ class Storehouse(gym.Env):
         # self.signature = self.get_signature()
         return (state_mix if self.transpose_state else state_mix.reshape(size + (self.feature_number,))).astype("uint8")
 
+    def check_full_storage(self):
+        """
+        Checks if the storage is full
+        """
+        x_size, y_size = self.grid.shape
+        storage_filter = np.zeros((x_size - 4, y_size - 4))  # without the outer crown and storage borders
+        mask = np.pad(storage_filter, ((1, 1), (1, 1)), "constant", constant_values=(1, 1))
+        mask = np.pad(mask, ((1, 1), (1, 1)), "constant", constant_values=(0, 0))
+        storage = self.grid[mask.astype(bool)]
+        self.full_storage_flag = all(storage > 0)
+        return self.full_storage_flag
+
     def assert_movement(self, ag: Agent, movement: tuple) -> int:
         try:  # Checking if the new position is valid
             _ = self.grid[movement]
@@ -730,7 +779,7 @@ class Storehouse(gym.Env):
             assert self.get_available_actions()[self.denorm_action(movement)]
             assert self.find_path_cost(ag.position, movement) >= 0
         except (AssertionError, IndexError):
-            self.num_invalid += 1
+            self.score.num_invalid += 1
             return 0
         return 1
 
@@ -763,11 +812,7 @@ class Storehouse(gym.Env):
             ag.position = movement
             return 3
         ag.position = movement
-        if (
-            movement not in [entrypoint.position for entrypoint in self.entrypoints]
-            and movement not in self.outpoints.outpoints
-            and (movement[0] in (0, self.grid.shape[0] - 1) or movement[1] in (0, self.grid.shape[1] - 1))
-        ):  # Move to outern ring
+        if self.full_storage_flag and movement in self.outern_crown:
             self.material[ag.got_item].position = movement
             return 6
         self.grid[ag.position] = ag.got_item
@@ -837,7 +882,6 @@ class Storehouse(gym.Env):
             box = [entrypoint for entrypoint in self.entrypoints if entrypoint.position == agent.position][0].get_item()
             self.material[box.id] = box
         reward = self.get_reward(move_status)
-        self.score.clear_run_score += reward
         self.score.returns.append(reward)
         return reward, move_status
 
@@ -931,6 +975,7 @@ class Storehouse(gym.Env):
         self.last_r = 0
         self.last_info = {}
         self.outpoints.reset()
+        self.full_storage_flag = False
         for entrypoint in self.entrypoints:
             entrypoint.reset()
         if random_flag and not force_clean:
@@ -939,9 +984,8 @@ class Storehouse(gym.Env):
             self.agents = [Agent(initial_position=(3, 3)) for _ in range(self.num_agents)]
         self.done = False
         self.score.reset()
-        self.num_invalid = 0
         self.number_actions = 0
-        if not len(self.get_available_actions()):
+        if not any(self.get_available_actions()):
             return self.reset(render)
         if render:
             self.render()
