@@ -14,6 +14,7 @@ from colorama import Back, Fore, Style
 from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
+
 # from scipy.stats import poisson
 from skimage.morphology import flood_fill
 
@@ -585,6 +586,9 @@ class Storehouse(gym.Env):
             if self.check_full_storage():
                 for cell in self.outern_crown:
                     maze[cell] = 0.5
+            else:
+                for cell in self.outern_crown:
+                    maze[cell] = 0
             for ep in self.entrypoints:
                 maze[ep.position] = 0
             if self.material[agent.got_item].type not in self.get_ready_to_consume_types():
@@ -776,7 +780,7 @@ class Storehouse(gym.Env):
         try:  # Checking if the new position is valid
             _ = self.grid[movement]
             assert all(ii >= 0 for ii in movement)
-            assert self.get_available_actions()[self.denorm_action(movement)]
+            assert self.action_mask[self.denorm_action(movement)]
             assert self.find_path_cost(ag.position, movement) >= 0
         except (AssertionError, IndexError):
             self.score.num_invalid += 1
@@ -834,33 +838,40 @@ class Storehouse(gym.Env):
         self.num_actions += 1
         info = {"Steps": self.num_actions}
         agent = self.agents[0]  # Assuming 1 agent
+        done = False
         if self.num_actions >= self.max_steps:
-            self.done = True
+            done = True
             reward = 0
             info["done"] = "Max movements achieved. Well done!"
             if self.log_flag:
                 self.log()
-            return self.return_result(reward, info)
+            return self.return_result(reward, done, info)
         ####
         self.score.steps += 1
         # Update environment with the agent interaction
-        if not self.done:
+        if not done:
             reward, move_status = self.act(agent, action, info)
         else:
             info["Info"] = "Done. Please reset the environment"
             reward = -1e3
-            return self.return_result(reward, info)
+            return self.return_result(reward, done, info)
         # Update environment unrelated to agent interaction
         self.outpoints_consume()
         self.update_timers()
         order = self.outpoints.create_delivery()
         if order is not None and self.log_flag:
             self.score.total_orders += 1
-        if self.save_episodes:
-            self.save_state_simplified(reward, action)
+        if all(self.get_available_actions() == False):
+            done = True
+            reward = -1e3
+            info["done"] = "Not any valid actions found. Reset."
+            print("No valid actions")
+            return self.return_result(reward, done, info)
+        # if self.save_episodes:
+        self.save_state_simplified(reward, action)
         if render:
             self.render()
-        return self.return_result(reward, info)
+        return self.return_result(reward, done, info)
 
     def update_timers(self):
         steps = len(self.path) - 1
@@ -885,9 +896,10 @@ class Storehouse(gym.Env):
         self.score.returns.append(reward)
         return reward, move_status
 
-    def return_result(self, reward, info):
+    def return_result(self, reward, done, info):
         self.last_r = reward
         self.current_return += reward
+        self.done = done
         info["timer"] = self.score.timer
         info["delivered"] = self.score.delivered_boxes
         info["outpoint queue"] = {
@@ -898,7 +910,7 @@ class Storehouse(gym.Env):
             info[f"EP{entrypoint.position}"] = list(entrypoint.material_queue)
 
         self.last_info = info
-        return self.get_state(), reward, self.done, info
+        return self.get_state(), reward, done, info
 
     def norm_action(self, action) -> tuple:
         assert action < self.grid.shape[0] * self.grid.shape[1] and action >= 0
