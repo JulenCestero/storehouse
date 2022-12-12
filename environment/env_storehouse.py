@@ -304,10 +304,13 @@ class Storehouse(gym.Env):
             self.episode_folder = self.logname / "episodes"
             self.episode_folder.mkdir(parents=True, exist_ok=True)
         if self.log_flag:
-            self.logname.mkdir(parents=True, exist_ok=True)
-            self.metrics_log = f"{str(self.logname / self.logname.name)}_metrics.csv"
-            with open(self.metrics_log, "a") as f:
-                f.write(self.score.print_header())
+            self.create_logfile()
+
+    def create_logfile(self):
+        self.logname.mkdir(parents=True, exist_ok=True)
+        self.metrics_log = f"{str(self.logname / self.logname.name)}_metrics.csv"
+        with open(self.metrics_log, "a") as f:
+            f.write(self.score.print_header())
 
     def load_conf(self, conf: str = CONF_NAME):
         """
@@ -845,7 +848,7 @@ class Storehouse(gym.Env):
             info["done"] = "Max movements achieved. Well done!"
             if self.log_flag:
                 self.log()
-            return self.return_result(reward, done, info)
+            return self.return_result(reward, done, info, action)
         ####
         self.score.steps += 1
         # Update environment with the agent interaction
@@ -854,7 +857,7 @@ class Storehouse(gym.Env):
         else:
             info["Info"] = "Done. Please reset the environment"
             reward = -1e3
-            return self.return_result(reward, done, info)
+            return self.return_result(reward, done, info, action)
         # Update environment unrelated to agent interaction
         self.outpoints_consume()
         self.update_timers()
@@ -865,13 +868,12 @@ class Storehouse(gym.Env):
             done = True
             reward = -1e3
             info["done"] = "Not any valid actions found. Reset."
-            print("No valid actions")
-            return self.return_result(reward, done, info)
+            # print("No valid actions")
+            return self.return_result(reward, done, info, action)
         # if self.save_episodes:
-        self.save_state_simplified(reward, action)
         if render:
             self.render()
-        return self.return_result(reward, done, info)
+        return self.return_result(reward, done, info, action)
 
     def update_timers(self):
         steps = len(self.path) - 1
@@ -896,7 +898,7 @@ class Storehouse(gym.Env):
         self.score.returns.append(reward)
         return reward, move_status
 
-    def return_result(self, reward, done, info):
+    def return_result(self, reward, done, info, action):
         self.last_r = reward
         self.current_return += reward
         self.done = done
@@ -910,6 +912,7 @@ class Storehouse(gym.Env):
             info[f"EP{entrypoint.position}"] = list(entrypoint.material_queue)
 
         self.last_info = info
+        self.save_state_simplified(reward, action)
         return self.get_state(), reward, done, info
 
     def norm_action(self, action) -> tuple:
