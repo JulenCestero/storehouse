@@ -1,9 +1,8 @@
 import copy
-import json
 import operator
 import pickle as pkl
 import pprint
-from pathlib import Path
+from functools import cache
 from time import sleep
 
 import click
@@ -218,6 +217,7 @@ def deserialize_out_state(state: int) -> list:
     return list(np.log2(powers).astype(int))
 
 
+# @cache
 def get_ready_to_consume_items_from_state(s: np.array, out_position: list, num_types: int) -> list:
     box_grid = s[0]
     outpoint_state = box_grid[out_position]
@@ -246,6 +246,7 @@ class EntrypointBox:
         self.type = type
 
 
+# @cache
 def get_ep_with_items_from_state(s: np.array, ep_position: list, num_types: int) -> dict:
     box_grid = s[0]
     age_grid = s[1]
@@ -326,6 +327,7 @@ def idle(agent_position):
     return (0, 2) if agent_position == (0, 1) else (0, 1)
 
 
+@cache
 def prepare_grid(matrix: np.array, start: tuple, end: tuple, whitelist: list = []) -> Grid:
     prepared_matrix = np.array(matrix, dtype="int16")
     prepared_matrix[start] = 0
@@ -335,9 +337,14 @@ def prepare_grid(matrix: np.array, start: tuple, end: tuple, whitelist: list = [
     return Grid(matrix=np.negative(prepared_matrix) + 1)
 
 
-def check_reachable(matrix: np.array, start_cell: tuple, end_cell: tuple, whitelist: list = []) -> bool:
+def check_reachable(matrix, start_cell, end_cell, whitelist=[[]]):
+    return _check_reachable(tuple(map(tuple, matrix != 0)), tuple(start_cell), tuple(end_cell), tuple(map(tuple, whitelist)))
+
+
+@cache
+def _check_reachable(matrix: np.array, start_cell: tuple, end_cell: tuple, whitelist: tuple = ()) -> bool:
     grid = prepare_grid(
-        copy.deepcopy(matrix),
+        matrix,
         start_cell,
         end_cell,
         whitelist=whitelist,
@@ -351,10 +358,16 @@ def check_reachable(matrix: np.array, start_cell: tuple, end_cell: tuple, whitel
 
 def find_target_cell(grid: np.array, entrypoints, outpoints, agent_position) -> tuple:
     target_cell = None
+    grid = np.array(grid)
     for ii in range(1, grid.shape[0] - 1):
         for jj in range(1, grid.shape[1] - 1):
             if grid[ii][jj] == 0:
-                if not check_reachable(grid, agent_position, (ii, jj), whitelist=entrypoints + outpoints):
+                if not check_reachable(
+                    grid,
+                    agent_position,
+                    (ii, jj),
+                    whitelist=entrypoints + outpoints,
+                ):
                     continue
                 target_cell = (ii, jj)
                 break
@@ -375,6 +388,7 @@ def calculate_item_type(box_grid: np.array, agent_grid: np.array, num_types: int
     return denormalize_type(box_grid[agent_position], num_types)
 
 
+# @cache
 def get_agent_item_type(state: np.array, num_types: int) -> list:
     box_grid = state[0]
     agent_grid = state[2]
@@ -383,6 +397,7 @@ def get_agent_item_type(state: np.array, num_types: int) -> list:
     return [calculate_item_type(box_grid, agent_grid, num_types)]
 
 
+# @cache
 def drop_box(
     state: np.array,
     agent_item_type: list,
@@ -401,6 +416,7 @@ def drop_box(
     return (deliver_box(outpoint_position), "deliver box") if verbose else deliver_box(outpoint_position)
 
 
+# @cache
 def take_box(
     state: np.array,
     ready_to_consume_types: list,
@@ -449,10 +465,11 @@ def ehp(env: Storehouse, state: np.array, verbose=False):
           is necessary to get some static info from the environment (positions mostly)
     """
     # Static information
-    outpoint_positions = env.outpoints.outpoints
+    outpoint_positions = tuple(map(tuple, env.outpoints.outpoints))
     num_types = len(env.type_information)
-    entrypoint_positions = [ep.position for ep in env.entrypoints]
+    entrypoint_positions = tuple(map(tuple, [ep.position for ep in env.entrypoints]))
     ####
+    # state = tuple(map(tuple, state))
     ready_to_consume_types = get_ready_to_consume_items_from_state(state, outpoint_positions[0], num_types)
     entrypoints_with_items = get_ep_with_items_from_state(state, entrypoint_positions, num_types)
     agent_item_type = get_agent_item_type(state, num_types)
@@ -520,11 +537,6 @@ def run_manual_train(
     global env
     VISUAL = int(visualize)
     SLEEP_TIME = 0.2 if visualize else 0.00
-    train_parameters = locals()
-    main_folder = Path(log_folder)
-    main_folder.mkdir(parents=True, exist_ok=True)
-    with open(main_folder / "train_parameters.json", "w") as f:
-        json.dump(train_parameters, f, indent=4)
     num_cpu = 4
     env = make_env(log_folder, save_episodes, conf_name, max_steps, random_start, path_reward_weight, seed, reward, gamma)
     if mdp:
@@ -546,6 +558,8 @@ def run_manual_train(
                 print("oh oh...")
             if r == -1:
                 print("Pochillo...")
+                env.render()
+                print(action)
                 pass
                 # import pdb
 

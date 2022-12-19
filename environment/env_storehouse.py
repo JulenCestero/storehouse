@@ -50,6 +50,7 @@ class Score:
         self.returns = []
         self.discounted_return = 0
         self.num_invalid = 0
+        self.trapped = 0
 
     def print_header(self) -> str:
         return (
@@ -64,7 +65,8 @@ class Score:
             f"max_id,"
             f"Steps,"
             f"time,"
-            f"Seed"
+            f"Seed,"
+            f"trapped"
             f"\n"
         )
 
@@ -81,7 +83,8 @@ class Score:
             f"{self.max_id},"
             f"{self.steps},"
             f"{self.timer},"
-            f"{self.seed}"
+            f"{self.seed},"
+            f"{self.trapped}"
             f"\n"
         )
 
@@ -254,6 +257,7 @@ class Storehouse(gym.Env):
         # logging.info(
         #     f"Logging: {logging}, save_episodes: {save_episodes}, max_steps: {max_steps}, conf_name: {conf_name}, augmented: {augment}, random_start: {random_start}, path_cost: {path_cost}, path_weights: {path_reward_weight}"
         # )
+        env_parameters = {k: v for k, v in locals().items() if k != "self"}
         if reward_function == 0:
             self.get_reward = self.get_reward
         elif reward_function == 1:
@@ -304,13 +308,15 @@ class Storehouse(gym.Env):
             self.episode_folder = self.logname / "episodes"
             self.episode_folder.mkdir(parents=True, exist_ok=True)
         if self.log_flag:
-            self.create_logfile()
+            self.create_logfile(env_parameters)
 
-    def create_logfile(self):
+    def create_logfile(self, env_params):
         self.logname.mkdir(parents=True, exist_ok=True)
         self.metrics_log = f"{str(self.logname / self.logname.name)}_metrics.csv"
         with open(self.metrics_log, "a") as f:
             f.write(self.score.print_header())
+        with open(self.logname / "env_parameters.json", "w") as f:
+            json.dump({**env_params, "initial_rng": self.rng[0].bit_generator.state}, f, indent=4)
 
     def load_conf(self, conf: str = CONF_NAME):
         """
@@ -868,7 +874,7 @@ class Storehouse(gym.Env):
             done = True
             reward = -1e3
             info["done"] = "Not any valid actions found. Reset."
-            # print("No valid actions")
+            self.score.trapped += 1
             return self.return_result(reward, done, info, action)
         # if self.save_episodes:
         if render:
